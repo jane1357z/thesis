@@ -11,7 +11,7 @@ class DataPrep:
         self.mode_threshold = mode_threshold
 
         self.col_types = {} # col_name: type
-        self.categrical_labels = {} # col_name: labels (only for categorical)
+        self.categrical_labels = {} # col_name: labels list (only for categorical)
 
         for col in general_cols:
             self.col_types[col] = "general"
@@ -21,7 +21,9 @@ class DataPrep:
             self.col_types[col] = "mixed"
         for col in categorical_cols:
             self.col_types[col] = "categorical"
-            self.categrical_labels[col] = row_df[col].unique()
+            # categories_temp = row_df[col].unique()
+            # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)}
+            self.categrical_labels[col] = row_df[col].unique() #one_hot_dict 
         
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
@@ -48,9 +50,12 @@ class DataPrep:
                 self.vector_repres["general"].append(feature_transformed.tolist())
 
             elif value == "categorical":
-                current_gender = self.row_df[key]
+                current = self.row_df[key]
                 encoder=ce.OneHotEncoder(cols=key,handle_unknown='return_nan',return_df=True,use_cat_names=True)
-                feature_transformed = encoder.fit_transform(current_gender)
+
+
+
+                feature_transformed = encoder.fit_transform(current)
                 feature_transformed = feature_transformed.to_numpy()
 
                 self.cols_mapping["categorical"].append([key, feature_transformed.shape[1]])
@@ -252,15 +257,19 @@ class DataPrep:
         tranposed_data = list(map(list, zip(*transformed_data_arrays)))
         transformed_data = [sum(inner, []) for inner in tranposed_data] # flatten arrays for each row
 
-        self.transformed_col_names = transformed_col_names
-        self.transformed_data_arrays = transformed_data_arrays
-        self.transformed_col_dims = transformed_col_dims
+        self.transformed_col_names = transformed_col_names # for inverse
+        # self.transformed_data_arrays = transformed_data_arrays
+        self.transformed_col_dims = transformed_col_dims # for inverse
         return transformed_data
     
-    def inverse_transform(self):
+    def inverse_transform(self,generated_data):
+        generated_data_arrays = []
+        generated_data = np.array(generated_data)
+        for elem in self.transformed_col_dims:
+            generated_data_arrays.append(generated_data[:, elem[0]:elem[0]+elem[1]])
         df_inverse = pd.DataFrame()
         for elem in self.transformed_col_names:
-            current = self.transformed_data_arrays[self.transformed_col_names.index(elem)]
+            current = generated_data_arrays[self.transformed_col_names.index(elem)]
             if self.col_types[elem]=="general":
                 u = np.array(current).flatten()
                 u = (u + 1) / 2
@@ -314,7 +323,7 @@ class DataPrep:
                 tmp = np.round(tmp)
                 df_inverse[elem] = tmp
             elif self.col_types[elem]=="categorical":
-                labels = self.categrical_labels[elem]
+                labels = self.categrical_labels[elem] #labels = list(self.categrical_labels.keys())[elem]
                 idx = np.argmax(current, axis=1)
                 df_inverse[elem] = [labels[i] for i in idx]
         return df_inverse
