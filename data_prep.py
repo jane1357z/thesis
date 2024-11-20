@@ -50,10 +50,7 @@ class DataPrep:
                 self.vector_repres["general"].append(feature_transformed.tolist())
 
             elif value == "categorical":
-                current = self.row_df[key]
                 encoder=ce.OneHotEncoder(cols=key,handle_unknown='return_nan',return_df=True,use_cat_names=True)
-
-
 
                 feature_transformed = encoder.fit_transform(current)
                 feature_transformed = feature_transformed.to_numpy()
