@@ -11,7 +11,7 @@ class DataPrep:
         self.mode_threshold = mode_threshold
 
         self.col_types = {} # col_name: type
-        self.categrical_labels = {} # col_name: labels list (only for categorical)
+        self.categorical_labels = {} # col_name: labels list (only for categorical)
 
         for col in general_cols:
             self.col_types[col] = "general"
@@ -23,7 +23,7 @@ class DataPrep:
             self.col_types[col] = "categorical"
             # categories_temp = row_df[col].unique()
             # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)}
-            self.categrical_labels[col] = row_df[col].unique() #one_hot_dict 
+            self.categorical_labels[col] = row_df[col].unique() #one_hot_dict 
         
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
@@ -320,7 +320,7 @@ class DataPrep:
                 tmp = np.round(tmp)
                 df_inverse[elem] = tmp
             elif self.col_types[elem]=="categorical":
-                labels = self.categrical_labels[elem] #labels = list(self.categrical_labels.keys())[elem]
+                labels = self.categorical_labels[elem] #labels = list(self.categorical_labels.keys())[elem]
                 idx = np.argmax(current, axis=1)
                 df_inverse[elem] = [labels[i] for i in idx]
         return df_inverse
