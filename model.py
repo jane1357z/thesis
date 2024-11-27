@@ -14,6 +14,7 @@ class Synthesizer:
                  noise_dim=128, # dim of z - noise vector for G 
                  generator_dim=[256, 256], # list of integers, size(s) of hidden layers
                  discriminator_dim=[256, 256], # list of integers, size(s) of hidden layers
+                 classifier_dim = [256, 256], # (64), list of integers of hidden layers
                  pac=10, # number of samples in one pac
                  batch_size=50,
                  epochs=150):
@@ -23,27 +24,64 @@ class Synthesizer:
         self.epochs = epochs
         self.generator_dim = generator_dim
         self.discriminator_dim = discriminator_dim
+        self.classifier_dim = classifier_dim
         self.pac = pac
 
-    def fit(self, train_data, transformation, data_sampler, cond_vector, classifier):
+    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col):
 
-        # transform data
-        # initizalize transformer and fit, get train_data
-        # train_data = 0
-        self.transformation = transformation
+        # transform data        
+        self.transformer = DataPrep(row_df=row_data,
+                    categorical_cols=categorical_cols,
+                    general_cols=general_cols,
+                    continuous_cols=continuous_cols,
+                    mixed_cols=mixed_cols, 
+                    clusters_numbers=clusters_numbers,
+                    mode_threshold=mode_threshold,
+                    mixed_modes=mixed_modes)
+        
+        train_data = self.transformer.transform(row_data)
 
-        # initialize Sampler, cond vector class
-        self.data_sampler = data_sampler 
-        self.cond_vector = cond_vector
+        data_dim = train_data.shape[1]
+
+        # initialize Sampler class
+        self.data_sampler = Sampler(train_data, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
+        
+        # initialize cond vector class
+        self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
+
+
+        # initialize C
+        train_data = torch.from_numpy(train_data).float()
+        classifier = Classifier(data_dim,self.classifier_dim, target_col, self.transformer.transformed_col_names, self.transformer.transformed_col_dims)
+        optimizer_params_C = dict(lr=2e-4, betas=(0.5, 0.9), eps=1e-3, weight_decay=1e-5)
+
+        optimizerC = optim.Adam(classifier.parameters(),**optimizer_params_C)
+
+
+        # train C
+        steps_per_epoch=50
+        epochs=100
+        loss = []
+        for i in tqdm(range(epochs)):
+            for id in range(steps_per_epoch):
+                real_pre, real_label = classifier(train_data)
+
+                loss_cc = classifier.loss_classification(real_pre, real_label)
+                loss.append(float(loss_cc))
+
+                optimizerC.zero_grad()
+                loss_cc.backward()
+                optimizerC.step()
+
 
         # initialize G
-        self.generator = Generator(self.noise_dim + cond_vector.n_opt, self.generator_dim, train_data.shape[1])
+        self.generator = Generator(self.noise_dim + self.cond_vector.n_opt, self.generator_dim, train_data.shape[1])
         optimizer_params_G = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerG = optim.Adam(self.generator.parameters(), **optimizer_params_G)
         
         # initialize D
-        data_dim = train_data.shape[1] # !!!
-        discriminator = Discriminator(data_dim + cond_vector.n_opt, self.discriminator_dim, pac=self.pac)
+
+        discriminator = Discriminator(data_dim + self.cond_vector.n_opt, self.discriminator_dim, pac=self.pac)
         optimizer_params_D = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerD = optim.Adam(discriminator.parameters(),**optimizer_params_D)
 
@@ -52,7 +90,7 @@ class Synthesizer:
         steps_d = 1 # number of updates D for 1 update G
         
         steps_per_epoch = max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
-
+        torch.autograd.set_detect_anomaly(True)
         for i in tqdm(range(self.epochs)):
             for id_ in range(steps_per_epoch):
                 # update steps_d times D
@@ -73,13 +111,13 @@ class Synthesizer:
                     c_perm = c[perm] # order of cond vectors in batch
 
                     fake = self.generator(noisez_c) # get generated data
-                    fake_act = apply_activate(fake, self.transformation.col_types, self.transformation.transformed_col_names, self.transformation.transformed_col_dims) # transform for D input
+                    fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform for D input
                     
                     fake_c = torch.cat([fake_act, c], dim=1) # concatenate feature and condition
                     real_c = torch.cat([real, c_perm], dim=1) # concatenate feature and condition
 
-                    y_fake, _ = discriminator(fake_c) # get yfake from D
-                    y_real, _ = discriminator(real_c) # get yreal from D
+                    y_fake = discriminator(fake_c) # get yfake from D
+                    y_real = discriminator(real_c) # get yreal from D
                     
                     penalty_d = discriminator.calc_gradient_penalty(real_c, fake_c, lambda_=10)
 
@@ -104,24 +142,21 @@ class Synthesizer:
                 optimizerG.zero_grad()
                 
                 fake = self.generator(noisez_c) # get generated data
-                fake_act = apply_activate(fake, self.transformation.col_types, self.transformation.transformed_col_names, self.transformation.transformed_col_dims) # transform for D input
+                fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform for D input
                 
                 fake_c = torch.cat([fake_act, c], dim=1) # concatenate feature and condition
-             
-                y_fake = discriminator(fake_c) 
 
-
-                y_fake,info_fake = discriminator(fake_c)
+                y_fake = discriminator(fake_c) # y_fake,info_fake = discriminator(fake_c)
                 # we do not need real samples to update G
 
                 # to mix up the condition vector and break the direct correspondence between the real data and the condition vector that was sampled for the fake data
                 # real data is no longer paired with the same condition vector that the generator used to generate fake data
-                _,info_real = discriminator(real_c)
+                # _,info_real = discriminator(real_c)
 
                 ######### loss calculation
 
                 # generator loss
-                cross_entropy = loss_generator(fake, self.transformation.transformed_col_names, self.transformation.transformed_col_dims, self.transformation.categorical_labels, self.cond_vector.cat_col_dims, c, m)
+                cross_entropy = loss_generator(fake, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, self.cond_vector.cat_col_dims, c, m)
                 
                 # original and # generator loss
                 g_orig_gen = -torch.mean(y_fake) + cross_entropy
@@ -129,26 +164,78 @@ class Synthesizer:
                 g_orig_gen.backward(retain_graph=True)
 
                 # information loss
-                info_fake_data = info_fake[:, :-cond_vector.n_opt]  # exclude dimension of conditional vector
-                info_real_data = info_real[:, :-cond_vector.n_opt]  # same for real data
 
                 # losses without the conditional vector, L2 norm (euqlidian distance)
-                #error
-                loss_mean = torch.norm(torch.mean(info_fake_data.view(self.batch_size, -1), dim=0) - torch.mean(info_real_data.view(self.batch_size, -1), dim=0), 2)
-                loss_std = torch.norm(torch.std(info_fake_data.view(self.batch_size, -1), dim=0) - torch.std(info_real_data.view(self.batch_size, -1), dim=0), 2)
+                loss_mean = torch.norm(torch.mean(fake_act, dim=0) - torch.mean(real, dim=0), 2)
+                loss_std = torch.norm(torch.std(fake_act, dim=0) - torch.std(real, dim=0), 2)
+                
+                # info_fake_data = info_fake[:, :-cond_vector.n_opt]  # exclude dimension of conditional vector
+                # info_real_data = info_real[:, :-cond_vector.n_opt]  # same for real data
+                # loss_mean = torch.norm(torch.mean(info_fake_data.view(self.batch_size, -1), dim=0) - torch.mean(info_real_data.view(self.batch_size, -1), dim=0), 2)
+                # loss_std = torch.norm(torch.std(info_fake_data.view(self.batch_size, -1), dim=0) - torch.std(info_real_data.view(self.batch_size, -1), dim=0), 2)
 
                 g_loss_info = loss_mean + loss_std 
-                g_loss_info.backward()
-                optimizerG.step()
+                g_loss_info.backward(retain_graph=True)
+                # optimizerG.step()
 
                 # classification loss G
                 fake_pre, fake_label = classifier(fake_act)
                 g_loss_class = classifier.loss_classification(fake_pre, fake_label)
 
-                optimizerG.zero_grad()
-                g_loss_class.backward()
+                # optimizerG.zero_grad(set_to_none=False)
+                g_loss_class.backward(retain_graph=True)
                 optimizerG.step()
+
+                # total_loss = g_loss_info+g_loss_class
+                # total_loss.backward(retain_graph=True)
+                # optimizerG.step()
                                 
             epoch += 1
+    
+    def sample(self, n_rows):
+        
+        self.generator.eval()
+
+        steps = n_rows // self.batch_size + 1
+        
+        data = []
+        
+        for i in range(steps):
+            noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
+            c, _, _, _ = self.cond_vector.sample_train(self.batch_size) # cond vector
+            c = torch.from_numpy(c)
+
+            noisez_c = torch.cat([noisez, c], dim=1) # concatinate noise with cond vector            
+            fake = self.generator(noisez_c) # get generated data
+            fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform for D input
+            
+            data.append(fake_act.detach().numpy())
+
+        data = np.concatenate(data, axis=0)
+        # result,resample = self.transformer.inverse_transform(data) #resample = len(invalid_ids)
+        
+        # while len(result) < n_rows:
+        #     data_resample = []    
+        #     steps_left = resample// self.batch_size + 1
+            
+        #     for i in range(steps_left):
+        #         noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
+        #         c, _, _, _ = self.cond_vector.sample_train(self.batch_size) # cond vector
+        #         c = torch.from_numpy(c)
+
+        #         noisez_c = torch.cat([noisez, c], dim=1) # concatinate noise with cond vector            
+        #         fake = self.generator(noisez_c) # get generated data
+        #         fake_act = apply_activate(fake, self.transformation.col_types, self.transformation.transformed_col_names, self.transformation.transformed_col_dims) # transform for D input
+                
+
+        #         data_resample.append(fake_act.detach().cpu().numpy())
+
+        #     data_resample = np.concatenate(data_resample, axis=0)
+
+        #     res,resample = self.transformer.inverse_transform(data_resample)
+        #     result  = np.concatenate([result,res],axis=0)
+        result_data = self.transformer.inverse_transform(data[0:n_rows])
+        return result_data #result[0:n_rows]
+
             
    

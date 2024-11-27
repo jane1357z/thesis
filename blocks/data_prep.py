@@ -6,7 +6,6 @@ from sklearn.mixture import BayesianGaussianMixture
 
 class DataPrep:
     def __init__(self, row_df: pd.DataFrame, categorical_cols: list, continuous_cols: list, mixed_cols: list, general_cols: list, clusters_numbers: dict, mode_threshold: float, mixed_modes: dict):
-        self.row_df = row_df
         self.clusters_numbers = clusters_numbers
         self.mixed_modes = mixed_modes
         self.mode_threshold = mode_threshold
@@ -34,17 +33,17 @@ class DataPrep:
 
 
 
-    def transform(self):
+    def transform(self, row_data):
         for key, value in self.col_types.items():
-            current = self.row_df[key]
+            current = row_data[key]
             if value == "general":
                 # get min, max values
-                max_v = self.row_df[key].max()
-                min_v = self.row_df[key].min()
+                max_v = row_data[key].max()
+                min_v = row_data[key].min()
                 self.gen_min_max["min"][key] = min_v
                 self.gen_min_max["max"][key] = max_v
                 # transform
-                feature_transformed = 2*(self.row_df[key]-min_v)/(max_v-min_v)-1
+                feature_transformed = 2*(row_data[key]-min_v)/(max_v-min_v)-1
                 feature_transformed = feature_transformed.to_numpy().reshape(-1, 1)
 
                 self.cols_mapping["general"].append([key, 1])
@@ -258,7 +257,7 @@ class DataPrep:
         self.transformed_col_names = transformed_col_names # for inverse
         # self.transformed_data_arrays = transformed_data_arrays
         self.transformed_col_dims = transformed_col_dims # for inverse
-        return transformed_data
+        return np.array(transformed_data)
     
     def inverse_transform(self,generated_data):
         generated_data_arrays = []

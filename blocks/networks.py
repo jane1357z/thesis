@@ -89,7 +89,7 @@ class Discriminator(Module):
         # output layer
         seq += [Linear(dim, 1)]
         self.seq = Sequential(*seq)
-        self.seq_info = Sequential(*seq[:-1]) # to exclude last layer
+        # self.seq_info = Sequential(*seq[:-1]) # to exclude last layer
 
     def calc_gradient_penalty(self, real_data, fake_data,lambda_=10): # lambda_ - hyperparam for GP / regularization term
         # ctab-gan use spherical linear interpolation (SLERP)
@@ -102,9 +102,9 @@ class Discriminator(Module):
         disc_output_interpolates = self(interpolates) # feeds the interpolated data into the discriminator to get the output
         # computes the gradients of the discriminator’s output with respect to the interpolated inputs
         gradients = torch.autograd.grad(
-            outputs=disc_output_interpolates[0],
+            outputs=disc_output_interpolates,
             inputs=interpolates,
-            grad_outputs=torch.ones(disc_output_interpolates[0].size()), #  gradient of each element of the disc_output_interpolates tensor with respect to the interpolates tensor
+            grad_outputs=torch.ones(disc_output_interpolates.size()), #  gradient of each element of the disc_output_interpolates tensor with respect to the interpolates tensor
             create_graph=True,
             retain_graph=True,
             only_inputs=True, # gradients are only computed with respect to the inputs (interpolates)
@@ -118,7 +118,7 @@ class Discriminator(Module):
 
     def forward(self, input_):
         assert input_.size()[0] % self.pac == 0 # checks that the batch size is divisible by pac
-        return self.seq(input_.view(-1, self.pacdim)), self.seq_info(input_.view(-1, self.pacdim)) # (250,13)-> (125,26), if pac=2, feature_dim=13
+        return self.seq(input_.view(-1, self.pacdim)) #, self.seq_info(input_.view(-1, self.pacdim)) # (250,13)-> (125,26), if pac=2, feature_dim=13
     
 
 class Residual(Module): # to solve the problem of the vanishing/exploding gradient, skip connections
