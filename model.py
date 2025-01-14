@@ -7,7 +7,7 @@ from tqdm import tqdm
 from blocks.data_prep import DataPrep
 from blocks.networks import Classifier, Discriminator, Generator, apply_activate, loss_generator
 from blocks.sampler import Sampler
-from blocks.cond_constr import Cond_vector
+from blocks.cond_constr import Cond_vector, Constraints
 
 class Synthesizer:
     def __init__(self,
@@ -17,7 +17,7 @@ class Synthesizer:
                  classifier_dim = [256, 256], # (64), list of integers of hidden layers
                  pac=10, # number of samples in one pac
                  batch_size=50,
-                 epochs=150):
+                 epochs=50):
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -27,7 +27,7 @@ class Synthesizer:
         self.classifier_dim = classifier_dim
         self.pac = pac
 
-    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col):
+    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col, class_balance):
 
         # transform data        
         self.transformer = DataPrep(row_df=row_data,
@@ -49,6 +49,8 @@ class Synthesizer:
         # initialize cond vector class
         self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
 
+        # initialize Constraints class
+        self.constraints = Constraints(self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
@@ -144,7 +146,7 @@ class Synthesizer:
                 fake = self.generator(noisez_c) # get generated data
                 fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform for D input
                 
-                fake_c = torch.cat([fake_act, c], dim=1) # concatenate feature and condition
+                fake_c = torch.cat([fake_act, c], dim=1) # concatenate feature and cond vector
 
                 y_fake = discriminator(fake_c) # y_fake,info_fake = discriminator(fake_c)
                 # we do not need real samples to update G
@@ -152,6 +154,8 @@ class Synthesizer:
                 # to mix up the condition vector and break the direct correspondence between the real data and the condition vector that was sampled for the fake data
                 # real data is no longer paired with the same condition vector that the generator used to generate fake data
                 # _,info_real = discriminator(real_c)
+
+
 
                 ######### loss calculation
 
@@ -169,26 +173,24 @@ class Synthesizer:
                 loss_mean = torch.norm(torch.mean(fake_act, dim=0) - torch.mean(real, dim=0), 2)
                 loss_std = torch.norm(torch.std(fake_act, dim=0) - torch.std(real, dim=0), 2)
                 
-                # info_fake_data = info_fake[:, :-cond_vector.n_opt]  # exclude dimension of conditional vector
-                # info_real_data = info_real[:, :-cond_vector.n_opt]  # same for real data
-                # loss_mean = torch.norm(torch.mean(info_fake_data.view(self.batch_size, -1), dim=0) - torch.mean(info_real_data.view(self.batch_size, -1), dim=0), 2)
-                # loss_std = torch.norm(torch.std(info_fake_data.view(self.batch_size, -1), dim=0) - torch.std(info_real_data.view(self.batch_size, -1), dim=0), 2)
-
                 g_loss_info = loss_mean + loss_std 
                 g_loss_info.backward(retain_graph=True)
-                # optimizerG.step()
 
                 # classification loss G
                 fake_pre, fake_label = classifier(fake_act)
                 g_loss_class = classifier.loss_classification(fake_pre, fake_label)
-
-                # optimizerG.zero_grad(set_to_none=False)
+                
                 g_loss_class.backward(retain_graph=True)
                 optimizerG.step()
 
-                # total_loss = g_loss_info+g_loss_class
-                # total_loss.backward(retain_graph=True)
-                # optimizerG.step()
+                # g_loss_class + penalty_constraint
+                penalty_constraint = self.constraints.calc_constraint_penalty(fake_act, self.batch_size, class_balance)
+
+                # total_loss = g_orig_gen + g_loss_info + g_loss_class + penalty_constraint
+
+                optimizerG.zero_grad()
+                penalty_constraint.backward()
+                optimizerG.step()
                                 
             epoch += 1
     
@@ -207,7 +209,7 @@ class Synthesizer:
 
             noisez_c = torch.cat([noisez, c], dim=1) # concatinate noise with cond vector            
             fake = self.generator(noisez_c) # get generated data
-            fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform for D input
+            fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform
             
             data.append(fake_act.detach().numpy())
 

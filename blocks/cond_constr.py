@@ -1,5 +1,5 @@
 import numpy as np
-
+import torch
 
 def st_ed_col(target_col, col_names, col_dims): # find indeces (starting and ending) of columns for labels
     col_idx = col_names.index(target_col)
@@ -27,7 +27,6 @@ class Cond_vector(object):
         self.col_types = col_types
         self.col_names = col_names
         self.col_dims = col_dims
-        self.data_len = len(data)
         self.categorical_labels = categorical_labels
         self.cat_col_dims = []
 
@@ -92,3 +91,39 @@ class Cond_vector(object):
             vec[i, self.cat_col_dims[col_idx[i]][0] + opt1prime[i]] = 1
             
         return vec
+
+class Constraints(object):
+    def __init__(self, col_types, col_names, col_dims, categorical_labels):
+        self.col_types = col_types
+        self.col_names = col_names
+        self.col_dims = col_dims
+        self.categorical_labels = categorical_labels
+
+    def calc_constraint_penalty(self, data, batch_size, constraints):
+        self.data = data.detach().numpy()
+        self.data_len = batch_size
+        self.constr_dict = constraints
+        penalty = 0
+
+        for col, perc in self.constr_dict.items():
+            col_idx = self.col_names.index(col)
+            st = self.col_dims[col_idx][0]
+            ed = self.col_dims[col_idx][0] + self.col_dims[col_idx][1]
+            col_data= np.transpose(self.data[:, st:ed])
+            result = np.array([sum(col) for col in col_data])
+            res_percentages = result/result.sum()
+            penalty += np.mean((res_percentages - perc) ** 2) # mse for fake data balance class and desired
+            penalty = torch.tensor(penalty, requires_grad=True)
+        return penalty
+    
+
+# class Conditions(object):
+#     def __init__(self, col1, col2, cond):
+#         self.col1 = col1
+#         self.col2 = col2
+#         self.cond = cond
+
+#     def check_condition(self, data, batch_size):
+#         # indicator
+#         pass
+
