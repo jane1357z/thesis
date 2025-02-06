@@ -22,8 +22,8 @@ class DataPrep:
         for col in categorical_cols:
             self.col_types[col] = "categorical"
             # categories_temp = row_df[col].unique()
-            # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)}
-            self.categorical_labels[col] = row_df[col].unique() #one_hot_dict 
+            # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)} #one_hot_dict 
+            self.categorical_labels[col] = row_df[col].unique() # categories for each class
         
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
@@ -108,18 +108,6 @@ class DataPrep:
 
                 feature_transformed = np.concatenate([feature_transformed, mean_probs_onehot], axis = 1) # final result. alpha and one-hot encoding of cluster
 
-                ###### change the order, starting from the biggest 
-                # col_sums = mean_probs_onehot.sum(axis=0)
-                # largest_indices = np.argsort(-1*col_sums)[:mean_probs_onehot.shape[1]] # -1 for descending order
-                # re_ordered_means = np.zeros_like(mean_probs_onehot)
-                # for id,val in enumerate(largest_indices):
-                #     re_ordered_means[:,id] = mean_probs_onehot[:,val]
-                # # ordering = []
-                # # ordering.append(largest_indices)
-                # vector_repres_cont = []
-                # vector_repres_cont += [feature_transformed, re_ordered_means]
-                ######
-
                 self.cols_mapping["continuous"].append([key, feature_transformed.shape[1]])
                 self.vector_repres["continuous"].append(feature_transformed.tolist())
 
@@ -200,20 +188,6 @@ class DataPrep:
                         feature_transformed[idx, 1:] = mean_probs_onehot[features_list_counter]
                         features_list_counter = features_list_counter + 1
 
-            
-                ###### reordering
-                # just_onehot = feature_transformed[:,1:]
-                # re_ordered_jhot= np.zeros_like(just_onehot)
-                # n = just_onehot.shape[1]
-                # col_sums = just_onehot.sum(axis=0)
-                # largest_indices = np.argsort(-1*col_sums)[:n]
-                # for id,val in enumerate(largest_indices):
-                #         re_ordered_jhot[:,id] = just_onehot[:,val]
-                # feature_transformed = feature_transformed[:,0].reshape([-1, 1])
-                # vector_repres_mixed = []
-                # vector_repres_mixed += [feature_transformed]
-                ######
-
                 self.cols_mapping["mixed"].append([key, feature_transformed.shape[1]])
                 self.vector_repres["mixed"].append(feature_transformed.tolist())
         
@@ -255,7 +229,6 @@ class DataPrep:
         transformed_data = [sum(inner, []) for inner in tranposed_data] # flatten arrays for each row
 
         self.transformed_col_names = transformed_col_names # for inverse
-        # self.transformed_data_arrays = transformed_data_arrays
         self.transformed_col_dims = transformed_col_dims # for inverse
         return np.array(transformed_data)
     
@@ -292,7 +265,7 @@ class DataPrep:
                 mean_t = means.reshape([-1])[p_argmax]
                 tmp = u * 4 * std_t + mean_t
 
-                # for idx, val in enumerate(tmp):
+                # for idx, val in enumerate(tmp): # to find the problems
                 #     if (val < info["min"]) | (val > info['max']):
                 #         invalid_ids.append(idx)  # mark invalid data points
 
@@ -320,7 +293,7 @@ class DataPrep:
                 tmp = np.round(tmp)
                 df_inverse[elem] = tmp
             elif self.col_types[elem]=="categorical":
-                labels = self.categorical_labels[elem] #labels = list(self.categorical_labels.keys())[elem]
+                labels = self.categorical_labels[elem]
                 idx = np.argmax(current, axis=1)
                 df_inverse[elem] = [labels[i] for i in idx]
         return df_inverse

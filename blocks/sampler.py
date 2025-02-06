@@ -24,7 +24,7 @@ class Sampler(object):
                 tmp = []
                 for j in range(ed-st):
                     tmp.append(np.nonzero(np.array(data)[:, st+j]))
-                self.cat_ones_row_idx.append(tmp)
+                self.cat_ones_row_idx.append(tmp) # row indeces where category is 1 for each column and its category
             else:
                 pass
             
@@ -36,8 +36,23 @@ class Sampler(object):
             idx = np.random.choice(np.arange(self.data_len), n)
             return self.data[idx]
         idx = []
+        # col and opt - 1
         for c, o in zip(col, opt):
             idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
+
+        # col and opt - 2
+        # for c, o in zip(col, opt):
+        #     cond1 = self.cat_ones_row_idx[c[0]][o[0]][0]  # rows by first col-opt
+        #     cond2 = self.cat_ones_row_idx[c[1]][o[1]][0]  # rows by second col-opt
+
+        #     intersection = np.intersect1d(cond1, cond2) # get random row by the condition, where two options in two columns intersect
+
+        #     # Make a random choice if intersection is not empty
+        #     if intersection.size > 0:
+        #         idx.append(np.random.choice(intersection))
+        #     else:
+        #         idx = np.random.choice(np.arange(self.data_len), 1) #!!!
+
         return self.data[idx]
     
 

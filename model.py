@@ -8,6 +8,7 @@ from blocks.data_prep import DataPrep
 from blocks.networks import Classifier, Discriminator, Generator, apply_activate, loss_generator
 from blocks.sampler import Sampler
 from blocks.cond_constr import Cond_vector, Constraints
+from blocks.evaluation import Model_evaluation
 
 class Synthesizer:
     def __init__(self,
@@ -27,8 +28,8 @@ class Synthesizer:
         self.classifier_dim = classifier_dim
         self.pac = pac
 
-    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col, class_balance):
-
+    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col, class_balance, condition_list):
+        print("Transformation")
         # transform data        
         self.transformer = DataPrep(row_df=row_data,
                     categorical_cols=categorical_cols,
@@ -47,10 +48,13 @@ class Synthesizer:
         self.data_sampler = Sampler(train_data, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
         
         # initialize cond vector class
-        self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
+        self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, class_balance, condition_list) # add constraints and conditions
 
         # initialize Constraints class
         self.constraints = Constraints(self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
+
+        # initialize Evaluation class
+        self.evaluation = Model_evaluation()
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
@@ -59,7 +63,7 @@ class Synthesizer:
 
         optimizerC = optim.Adam(classifier.parameters(),**optimizer_params_C)
 
-
+        print("train C")
         # train C
         steps_per_epoch=50
         epochs=100
@@ -87,6 +91,9 @@ class Synthesizer:
         optimizer_params_D = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerD = optim.Adam(discriminator.parameters(),**optimizer_params_D)
 
+        print("train G and D")
+
+        # train G and D
 
         epoch = 0
         steps_d = 1 # number of updates D for 1 update G
@@ -98,7 +105,7 @@ class Synthesizer:
                 # update steps_d times D
                 for _ in range(steps_d):
                     noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
-                    c, m, col, opt = self.cond_vector.sample_train(self.batch_size) # cond vector
+                    c, m, col, opt = self.cond_vector.sample_train(self.batch_size) # cond vector 
                     c = torch.from_numpy(c)
                     m = torch.from_numpy(m)
 
@@ -148,12 +155,11 @@ class Synthesizer:
                 
                 fake_c = torch.cat([fake_act, c], dim=1) # concatenate feature and cond vector
 
-                y_fake = discriminator(fake_c) # y_fake,info_fake = discriminator(fake_c)
+                y_fake = discriminator(fake_c)
                 # we do not need real samples to update G
 
                 # to mix up the condition vector and break the direct correspondence between the real data and the condition vector that was sampled for the fake data
                 # real data is no longer paired with the same condition vector that the generator used to generate fake data
-                # _,info_real = discriminator(real_c)
 
 
 
@@ -186,6 +192,8 @@ class Synthesizer:
                 # g_loss_class + penalty_constraint
                 penalty_constraint = self.constraints.calc_constraint_penalty(fake_act, self.batch_size, class_balance)
 
+                self.evaluation.penalty_measure(penalty_constraint)
+
                 # total_loss = g_orig_gen + g_loss_info + g_loss_class + penalty_constraint
 
                 optimizerG.zero_grad()
@@ -193,6 +201,10 @@ class Synthesizer:
                 optimizerG.step()
                                 
             epoch += 1
+        
+        print("Evaluation")
+        ####### Evaluation
+        # self.evaluation.penalty_graph()
     
     def sample(self, n_rows):
         
@@ -214,30 +226,9 @@ class Synthesizer:
             data.append(fake_act.detach().numpy())
 
         data = np.concatenate(data, axis=0)
-        # result,resample = self.transformer.inverse_transform(data) #resample = len(invalid_ids)
-        
-        # while len(result) < n_rows:
-        #     data_resample = []    
-        #     steps_left = resample// self.batch_size + 1
-            
-        #     for i in range(steps_left):
-        #         noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
-        #         c, _, _, _ = self.cond_vector.sample_train(self.batch_size) # cond vector
-        #         c = torch.from_numpy(c)
 
-        #         noisez_c = torch.cat([noisez, c], dim=1) # concatinate noise with cond vector            
-        #         fake = self.generator(noisez_c) # get generated data
-        #         fake_act = apply_activate(fake, self.transformation.col_types, self.transformation.transformed_col_names, self.transformation.transformed_col_dims) # transform for D input
-                
-
-        #         data_resample.append(fake_act.detach().cpu().numpy())
-
-        #     data_resample = np.concatenate(data_resample, axis=0)
-
-        #     res,resample = self.transformer.inverse_transform(data_resample)
-        #     result  = np.concatenate([result,res],axis=0)
         result_data = self.transformer.inverse_transform(data[0:n_rows])
-        return result_data #result[0:n_rows]
+        return result_data
 
             
    
