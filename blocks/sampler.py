@@ -37,21 +37,27 @@ class Sampler(object):
             return self.data[idx]
         idx = []
         # col and opt - 1
-        for c, o in zip(col, opt):
-            idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
-
+        case_name = "actual"
+        if case_name == "actual" or case_name == "constr":
+            for c, o in zip(col, opt):
+                idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
+                
+        elif case_name == "cond" or case_name == "constr_cond":
         # col and opt - 2
-        # for c, o in zip(col, opt):
-        #     cond1 = self.cat_ones_row_idx[c[0]][o[0]][0]  # rows by first col-opt
-        #     cond2 = self.cat_ones_row_idx[c[1]][o[1]][0]  # rows by second col-opt
+            for c, o in zip(col, opt):
+                if o == False:
+                    idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
+                else:
+                    cond1 = self.cat_ones_row_idx[c[0]][o[0]][0]  # rows by first col-opt
+                    cond2 = self.cat_ones_row_idx[c[1]][o[1]][0]  # rows by second col-opt
 
-        #     intersection = np.intersect1d(cond1, cond2) # get random row by the condition, where two options in two columns intersect
+                    intersection = np.intersect1d(cond1, cond2) # get random row by the condition, where two options in two columns intersect
 
-        #     # Make a random choice if intersection is not empty
-        #     if intersection.size > 0:
-        #         idx.append(np.random.choice(intersection))
-        #     else:
-        #         idx = np.random.choice(np.arange(self.data_len), 1) #!!!
+                    # Make a random choice if intersection is not empty
+                    if intersection.size > 0:
+                        idx.append(np.random.choice(intersection))
+                    else:
+                        idx = np.random.choice(np.arange(self.data_len), 1) #!!!
 
         return self.data[idx]
     

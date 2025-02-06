@@ -8,16 +8,25 @@ def st_ed_col(target_col, col_names, col_dims): # find indeces (starting and end
     return st, ed
 
 # selects option for each sample in batch, cumulative sum maybe to change 
-def random_choice_prob_index(a, axis=1): # takes indices based on cumulative probability distributions in array of normalized log-probabilities - sampling from normalized log-probs 
-    r = np.expand_dims(np.random.rand(a.shape[1 - axis]), axis=axis) # random value between 0 and 1 for each category in feature in batch
-    # returns the index of the first threshold where the cumulative sum exceeds the random number (r) - index of category for each sample in batch
-    return (a.cumsum(axis=axis) > r).argmax(axis=axis) # compares cumulative sum of probabilities with the random numbers
+# def random_choice_prob_index(a, axis=1): # takes indices based on cumulative probability distributions in array of normalized log-probabilities - sampling from normalized log-probs 
+#     r = np.expand_dims(np.random.rand(a.shape[1 - axis]), axis=axis) # random value between 0 and 1 for each category in feature in batch
+#     # returns the index of the first threshold where the cumulative sum exceeds the random number (r) - index of category for each sample in batch
+#     return (a.cumsum(axis=axis) > r).argmax(axis=axis) # compares cumulative sum of probabilities with the random numbers
 
-def random_choice_prob_index_sampling(probs,col_idx): # sampling from actual probs, not log - selects option for each sample in batch
+def random_choice_prob_index_sampling(probs,col_idx,col_opt_single): # sampling from actual probs, not log - selects option for each sample in batch
     option_list = []
-    for i in col_idx:
-        pp = probs[i]
-        option_list.append(np.random.choice(np.arange(len(probs[i])), p=pp))
+    if col_opt_single == True:
+        for i in col_idx:
+            pp = probs[i]
+            option_list.append(np.random.choice(np.arange(len(probs[i])), p=pp))
+    else:
+        for i in col_idx:
+            pp0 = probs[col_idx[i][0]] # get actual probs (no condition applied), col_idx[i][0] - to get first col of condition
+            # pp1 = probs[col_idx[i][1]] # get actual probs (no condition applied), col_idx[i][1] - to get second col of condition
+            opt0 = np.random.choice(np.arange(len(probs[col_idx[i][0]])), p=pp0) # get option based on actual prob
+            # opt1 = np.random.choice(np.arange(len(probs[col_idx[i][1]])), p=pp1) # get option based on actual prob
+            opt1 = False
+            option_list.append([opt0, opt1])
     
     return np.array(option_list).reshape(col_idx.shape)
 
@@ -86,13 +95,33 @@ class Cond_vector(object):
                 option_list.append(np.random.choice(np.arange(len(probs[i])), p=pp))
 
         return np.array(option_list).reshape(col_idx.shape)
+    
+    def category_choice_condition(self, probs, col_idx):
+        option_list = []
+        epsilon = np.random.uniform(0,1)
+        cond_ratio = 1 # threshold based on probability
+        # chack_conditions in evaluation class - probability of condition
 
+        if epsilon >= cond_ratio:
+            opt0 = np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]
+            opt1 = np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]
+        else:
+            for i in col_idx:
+                pp0 = probs[col_idx[i][0]] # get actual probs (no condition applied), col_idx[i][0] - to get first col of condition
+                # pp1 = probs[col_idx[i][1]] # get actual probs (no condition applied), col_idx[i][1] - to get second col of condition
+                opt0 = np.random.choice(np.arange(len(probs[col_idx[i][0]])), p=pp0) # get option based on actual prob
+                # opt1 = np.random.choice(np.arange(len(probs[col_idx[i][1]])), p=pp1) # get option based on actual prob
+                opt1 = False
+                option_list.append([opt0, opt1])
+        
+        return np.array(option_list).reshape(col_idx.shape)
+    
     def category_choice_constr_cond(self, probs, col_idx): # !!!
         option_list = []
-        class_balance_col = list(self.class_balance.keys())[0]
+        class_balance_col = list(self.class_balance.keys())[0] 
         for i in col_idx:
             if list(self.categorical_labels.keys())[i] == class_balance_col:
-                pp = self.class_balance[class_balance_col]
+                pp = self.class_balance[class_balance_col] # takes probs from constraint
                 option_list.append(np.random.choice(np.arange(len(pp)), p=pp))
                 # compose condition
             else:
@@ -102,67 +131,108 @@ class Cond_vector(object):
 
         return np.array(option_list).reshape(col_idx.shape)
     
-    def category_choice_condition(self, probs, col_idx):
-        # compose condition
-        option_list = []
-        for i in col_idx:
-            pp = probs[i]
-            option_list.append(np.random.choice(np.arange(len(probs[i])), p=pp))
-        
-        return np.array(option_list).reshape(col_idx.shape)
-    
     def sample_train(self, batch): # conditional vectors for training - using log probabilities
         if self.n_col == 0:
             return None
-        # col and opt - 1
-        col_idx = np.random.choice(np.arange(self.n_col), batch) # column selection for each sample in batch
         
-        # col and opt - 2
-        # col_idx = np.array([np.random.choice(np.arange(self.n_col), size=2, replace=False) for _ in range(batch)])
-
         # here only categorical columns
-        vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
 
-        # col and opt - 1, mask is not used anywhere?
-        mask = np.zeros((batch, self.n_col), dtype='float32') # categorical column was selected for each sample
-        mask[np.arange(batch), col_idx] = 1  # one-hot encoded, with only one for the column selection
+        # cases: actual, constr, cond, constr_cond
+        case_name = "actual"
+        if case_name == "actual":
+            col_idx = np.random.choice(np.arange(self.n_col), batch) # column selection for each sample in batch
+            # mask is not used anywhere?
+            mask = np.zeros((batch, self.n_col), dtype='float32') # categorical column was selected for each sample
+            mask[np.arange(batch), col_idx] = 1  # one-hot encoded, with only one for the column selection
+            vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
+            
+            ### case actual original probs (nothing with constraints or conditions)
+            opt1prime = self.category_choice_actual_prob(self.p_sampling, col_idx)
+            for i in np.arange(batch):
+                vec[i, self.cat_col_dims[col_idx[i]][0] + opt1prime[i]] = 1
 
-        # col and opt - 2
-        # mask = np.zeros((batch, 2, 2), dtype='float32') # categorical column was selected for each sample
-        # mask[np.arange(batch), col_idx[:, 0], 0] = 1  # set the first column
-        # mask[np.arange(batch), col_idx[:, 1], 1] = 1  # set the second column
+        elif case_name == "constr":
+            col_idx = np.random.choice(np.arange(self.n_col), batch) # column selection for each sample in batch
+            # mask is not used anywhere?
+            mask = np.zeros((batch, self.n_col), dtype='float32') # categorical column was selected for each sample
+            mask[np.arange(batch), col_idx] = 1  # one-hot encoded, with only one for the column selection
+            vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
+            
+            ### case constr get column from constraint and sample from class_balance
+            opt1prime = self.category_choice_constraint(self.p_sampling, col_idx)
+            for i in np.arange(batch):
+                vec[i, self.cat_col_dims[col_idx[i]][0] + opt1prime[i]] = 1
+
+        elif case_name == "cond":
+            col_idx = np.array([np.random.choice(np.arange(self.n_col), size=2, replace=False) for _ in range(batch)])
+
+            mask = np.zeros((batch, 2, 2), dtype='float32') # categorical column was selected for each sample
+            mask[np.arange(batch), col_idx[:, 0], 0] = 1  # set the first column
+            mask[np.arange(batch), col_idx[:, 1], 1] = 1  # set the second column
+            vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
+
+            ### case cond get columns from condtions and sample from condtions col and opt - 2
+            opt1prime = self.category_choice_condition(self.p_sampling, col_idx)
+            
+            for i in np.arange(batch): 
+                # col and opt - 2
+                if opt1prime[i][1] == False:
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                else:
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                    vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1
+
+        elif case_name == "constr_cond":
+            col_idx = np.array([np.random.choice(np.arange(self.n_col), size=2, replace=False) for _ in range(batch)])
+
+            mask = np.zeros((batch, 2, 2), dtype='float32') # categorical column was selected for each sample
+            mask[np.arange(batch), col_idx[:, 0], 0] = 1  # set the first column
+            mask[np.arange(batch), col_idx[:, 1], 1] = 1  # set the second column
+            vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
+
+            ### case constr_cond get column from constraint and sample from class_balance and conditions col and opt - 2
+            opt1prime = self.category_choice_constr_cond(self.p_sampling, col_idx)
+            for i in np.arange(batch): 
+                # col and opt - 2
+                if opt1prime[i][1] == False:
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                else:
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                    vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1
 
         #### not needed # initially
         # opt1prime = random_choice_prob_index(self.p_log[col_idx]) # p_log[col_idx] - batch with selected columns, select option in the current column
-        
-        ####### cases
-        ### case 0 original probs (nothing with constraints or conditions)
-        # opt1prime = self.category_choice_actual_prob(self.p_sampling, col_idx)
-        ### case 1 get column from constraint and sample from class_balance
-        # opt1prime = self.category_choice_constraint(self.p_sampling, col_idx)
-        ### case 2 get column from constraint and sample from class_balance and conditions col and opt - 2
-        # opt1prime = self.category_choice_constr_cond(self.p_sampling, col_idx)
-        ### case 3 get columns from condtions and sample from condtions col and opt - 2
-        opt1prime = self.category_choice_condition(self.p_sampling, col_idx)
 
-
-
-        for i in np.arange(batch):
-            vec[i, self.cat_col_dims[col_idx[i]][0] + opt1prime[i]] = 1
         return vec, mask, col_idx, opt1prime
 
     def sample(self, batch): # conditional vectors for testing / evaluation - using actual probabilities
         if self.n_col == 0:
             return None
-      
-        col_idx = np.random.choice(np.arange(self.n_col), batch) # choice of the column
-
-        vec = np.zeros((batch, self.n_opt), dtype='float32')
-        opt1prime = random_choice_prob_index_sampling(self.p_sampling,col_idx) # choice of the option in the current column based on actual probs, (not log)
         
-        for i in np.arange(batch):
-            vec[i, self.cat_col_dims[col_idx[i]][0] + opt1prime[i]] = 1
+        case_name = "actual"
+        if case_name == "actual" or case_name == "constr":
+            # col and opt - 1
+            col_idx = np.random.choice(np.arange(self.n_col), batch) # choice of the column
+            vec = np.zeros((batch, self.n_opt), dtype='float32')
+            # col and opt - 1
+            opt1prime = random_choice_prob_index_sampling(self.p_sampling,col_idx, col_opt_single=True) # choice of the option in the current column based on actual probs, (not log)
             
+            for i in np.arange(batch):
+                # col and opt - 1
+                vec[i, self.cat_col_dims[col_idx[i]][0] + opt1prime[i]] = 1
+                
+        elif case_name == "cond" or case_name == "constr_cond":
+            # col and opt - 2
+            col_idx = np.array([np.random.choice(np.arange(self.n_col), size=2, replace=False) for _ in range(batch)])
+            vec = np.zeros((batch, self.n_opt), dtype='float32')
+
+            for i in np.arange(batch):
+                # col and opt - 2
+                if opt1prime[i][1] == False:
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                else:
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                    vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1
         return vec
 
 class Constraints(object):
@@ -191,14 +261,3 @@ class Constraints(object):
         penalty = torch.tensor(penalty, requires_grad=True)
         return penalty
     
-
-# class Conditions(object):
-#     def __init__(self, col1, col2, cond):
-#         self.col1 = col1
-#         self.col2 = col2
-#         self.cond = cond
-
-#     def check_condition(self, data, batch_size):
-#         # indicator
-#         pass
-
