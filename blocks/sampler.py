@@ -37,7 +37,7 @@ class Sampler(object):
             return self.data[idx]
         idx = []
         # col and opt - 1
-        case_name = "actual"
+        case_name = "cond"
         if case_name == "actual" or case_name == "constr":
             for c, o in zip(col, opt):
                 idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
@@ -45,7 +45,7 @@ class Sampler(object):
         elif case_name == "cond" or case_name == "constr_cond":
         # col and opt - 2
             for c, o in zip(col, opt):
-                if o == False:
+                if o[1] == None:
                     idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
                 else:
                     cond1 = self.cat_ones_row_idx[c[0]][o[0]][0]  # rows by first col-opt

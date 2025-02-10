@@ -23,7 +23,7 @@ class DataPrep:
             self.col_types[col] = "categorical"
             # categories_temp = row_df[col].unique()
             # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)} #one_hot_dict 
-            self.categorical_labels[col] = row_df[col].unique() # categories for each class
+            self.categorical_labels[col] = np.array(row_df[col].value_counts().index) # row_df[col].unique() # categories for each class
         
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed

@@ -54,7 +54,7 @@ class Synthesizer:
         self.constraints = Constraints(self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
 
         # initialize Evaluation class
-        self.evaluation = Model_evaluation()
+        self.evaluation_model = Model_evaluation()
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
@@ -192,7 +192,7 @@ class Synthesizer:
                 # g_loss_class + penalty_constraint
                 penalty_constraint = self.constraints.calc_constraint_penalty(fake_act, self.batch_size, class_balance)
 
-                self.evaluation.penalty_measure(penalty_constraint)
+                self.evaluation_model.penalty_measure(penalty_constraint)
 
                 # total_loss = g_orig_gen + g_loss_info + g_loss_class + penalty_constraint
 
@@ -204,7 +204,7 @@ class Synthesizer:
         
         print("Evaluation")
         ####### Evaluation
-        # self.evaluation.penalty_graph()
+        # self.evaluation_model.penalty_graph()
     
     def sample(self, n_rows):
         
@@ -216,7 +216,7 @@ class Synthesizer:
         
         for i in range(steps):
             noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
-            c, _, _, _ = self.cond_vector.sample_train(self.batch_size) # cond vector
+            c = self.cond_vector.sample(self.batch_size) # cond vector
             c = torch.from_numpy(c)
 
             noisez_c = torch.cat([noisez, c], dim=1) # concatinate noise with cond vector            

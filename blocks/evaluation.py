@@ -23,7 +23,6 @@ from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn import model_selection
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
-
 class Model_evaluation(object):
     def __init__(self):
         self.penalties = []
@@ -53,7 +52,7 @@ class Data_evaluation(object):
         self.cat_fake_data = self.fake_data[self.cat_cols]
 
         self.non_cat_real_data = self.real_data[self.non_cat_cols]
-        self.non_cat_fake_data = self.real_data[self.non_cat_cols]
+        self.non_cat_fake_data = self.fake_data[self.non_cat_cols]
 
         self.col_types = {} # col_name: type
         
@@ -66,7 +65,8 @@ class Data_evaluation(object):
         for col in categorical_cols:
             self.col_types[col] = "categorical"
 
-    def calc_average_jsd(self, features):
+    def calc_average_jsd(self):
+        features = self.cat_cols
         jsd = []
         for col in features:
             real_pdf = dict(self.cat_real_data[col].value_counts()/self.cat_real_data[col].value_counts().sum())
@@ -81,46 +81,52 @@ class Data_evaluation(object):
         jsd_average = sum(jsd)/len(jsd)
         return jsd_average
         
-    def calc_average_wd(self, features):
+    def calc_average_wd(self):
+        features = self.non_cat_cols
         wd = []
+
+        # scaler = MinMaxScaler() 
+
         for col in features:
-            wd_score = wasserstein_distance(self.non_cat_real_data[col].to_numpy(), self.non_cat_fake_data[col].to_numpy())
+            # col_scaled_real = scaler.fit_transform(self.non_cat_real_data[col].to_numpy().reshape(-1, 1)).ravel()
+            # col_scaled_fake = scaler.fit_transform(self.non_cat_fake_data[col].to_numpy().reshape(-1, 1)).ravel()
+            wd_score = wasserstein_distance(self.non_cat_real_data[col].to_numpy(), self.non_cat_fake_data[col].to_numpy()) # wasserstein_distance(col_scaled_real, col_scaled_fake) # 
             wd.append(wd_score)
         wd_average = sum(wd)/len(wd)
         return wd_average
-        
-    
+         
     def calc_diff_corr_coef(self):
         real_corr = np.triu(self.non_cat_real_data.corr(method = 'spearman')) # pearson
         fake_corr = np.triu(self.non_cat_fake_data.corr(method = 'spearman'))
-        result = np.sum(np.abs(real_corr - fake_corr)) #/np.size(real_matrix)
-        return result
+        corr_coef_diff = np.sum(np.abs(real_corr - fake_corr)) #/np.size(real_matrix)
+        return corr_coef_diff
     
-    def calc_diff_theils_u(self, features):
-        real_theil = np.zeros([len(self.cat_cols), len(self.cat_cols)])
+    def calc_diff_theils_u(self):
+        features = self.cat_cols
+        real_theils = np.zeros([len(self.cat_cols), len(self.cat_cols)])
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
                 theils_coef = theils_u(self.cat_real_data[var1], self.cat_real_data[var2])
-                real_theil[self.cat_cols.index(var1),self.cat_cols.index(var2)] = theils_coef
+                real_theils[self.cat_cols.index(var1),self.cat_cols.index(var2)] = theils_coef
 
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
                 theils_coef = theils_u(self.cat_real_data[var2], self.cat_real_data[var1])
-                real_theil[self.cat_cols.index(var2),self.cat_cols.index(var1)] = theils_coef
+                real_theils[self.cat_cols.index(var2),self.cat_cols.index(var1)] = theils_coef
 
-        fake_theil = np.zeros([len(self.cat_cols), len(self.cat_cols)])
+        fake_theils = np.zeros([len(self.cat_cols), len(self.cat_cols)])
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
                 theils_coef = theils_u(self.cat_fake_data[var1], self.cat_fake_data[var2])
-                fake_theil[self.cat_cols.index(var1),self.cat_cols.index(var2)] = theils_coef
+                fake_theils[self.cat_cols.index(var1),self.cat_cols.index(var2)] = theils_coef
 
 
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
                 theils_coef = theils_u(self.cat_fake_data[var2], self.cat_fake_data[var1])
-                fake_theil[self.cat_cols.index(var2),self.cat_cols.index(var1)] = theils_coef
-        result = np.sum(np.abs(real_theil - fake_theil))
-        return result
+                fake_theils[self.cat_cols.index(var2),self.cat_cols.index(var1)] = theils_coef
+        theils_u_diff = np.sum(np.abs(real_theils - fake_theils))
+        return theils_u_diff
     
     def calc_diff_corr_ratio(self):
         real_corr_ratio = np.zeros([len(self.cat_cols), len(self.non_cat_cols)])
@@ -136,8 +142,8 @@ class Data_evaluation(object):
             for con_var in self.non_cat_cols:
                 corr_ratio = correlation_ratio(self.cat_fake_data[cat_var], self.non_cat_fake_data[con_var])
                 fake_corr_ratio[self.cat_cols.index(cat_var), self.non_cat_cols.index(con_var)] = corr_ratio
-        result = np.sum(np.abs(real_corr_ratio - fake_corr_ratio))
-        return result
+        corr_ratio_diff = np.sum(np.abs(real_corr_ratio - fake_corr_ratio))
+        return corr_ratio_diff
 
     def perform_clustering(self):
         m_clusters = 4
@@ -187,7 +193,6 @@ class Data_evaluation(object):
         log_cluster_fake_real = np.log(np.mean(((n_R_i / n_i) - c) ** 2))
         return centroids_diff_fake, centroids_diff_merged, centroids_fake_real, log_cluster_merged, log_cluster_fake_real
     
-
     def train_evaluate_algo_class(self, x_train, y_train, x_test, y_test, model_name):
         if model_name == "dt":
             model = tree.DecisionTreeClassifier(random_state=42)
@@ -241,8 +246,6 @@ class Data_evaluation(object):
         # delete classes, which are too small
         ## assume, len(fake)<len(real)
 
-
-
         non_target_cols = [x for x in list(self.col_types.keys()) if x != target_col]
         fake_data_indep = self.fake_data.loc[:, non_target_cols]
         fake_data_dep = self.fake_data.loc[:, target_col]
@@ -262,18 +265,20 @@ class Data_evaluation(object):
                 # Detects missing correlations: If some features become less important in the fake data, the GAN might not be learning their dependencies correctly.
                 feature_importance_diff_class = feature_importance_real-feature_importance_fake
                 
-                # graph
-                x_labels = non_target_cols
-                x = np.arange(len(x_labels))
+                # graph ##!!! save to png
+                # x_labels = non_target_cols
+                # x = np.arange(len(x_labels))
 
-                plt.bar(x - 0.2, feature_importance_real, width=0.4, label='Real Data', alpha=0.8)
-                plt.bar(x + 0.2, feature_importance_fake, width=0.4, label='Fake Data', alpha=0.8)
+                # plt.bar(x - 0.2, feature_importance_real, width=0.4, label='Real Data', alpha=0.8)
+                # plt.bar(x + 0.2, feature_importance_fake, width=0.4, label='Fake Data', alpha=0.8)
 
-                plt.xticks(ticks=x, labels=x_labels)
-                plt.ylabel('Feature Importance')
-                plt.title('Comparison of Decision Tree Feature Importance (Real vs. Fake)')
-                plt.legend()
-                plt.show()
+                # plt.xticks(ticks=x, labels=x_labels)
+                # plt.ylabel('Feature Importance')
+                # plt.title('Comparison of Decision Tree Feature Importance (Real vs. Fake)')
+                # plt.legend()
+                # plt.show()
+                return class_metrics_diff_dt, feature_importance_diff_class
+            
             elif model_name == "mlp":
                 # scaler = StandardScaler() # for normal distr / k-means
                 scaler = MinMaxScaler()
@@ -290,7 +295,8 @@ class Data_evaluation(object):
                 acc_fake, auc_fake, f1_score_fake = self.train_evaluate_algo_class(x_train_fake, y_train_fake, x_test_real, y_test_real, model_name)
 
                 class_metrics_diff_mlp = [abs(acc_real-acc_fake), abs(auc_real-auc_fake), abs(f1_score_real-f1_score_fake)]
-
+                return class_metrics_diff_mlp
+            
         elif task == "regr":
             if model_name == "dt":
                 mape_real, evs_real, r2_score_real, feature_importance_real = self.train_evaluate_algo_regr(x_train_real, y_train_real, x_test_real, y_test_real, model_name)
@@ -298,18 +304,20 @@ class Data_evaluation(object):
                 regr_metrics_diff_dt = [abs(mape_real-mape_fake), abs(evs_real-evs_fake), abs(r2_score_real-r2_score_fake)]
                 feature_importance_diff_regr = feature_importance_real-feature_importance_fake
 
-                # graph
-                x_labels = non_target_cols
-                x = np.arange(len(x_labels))
+                # graph #!!! save png
+                # x_labels = non_target_cols
+                # x = np.arange(len(x_labels))
 
-                plt.bar(x - 0.2, feature_importance_real, width=0.4, label='Real Data', alpha=0.8)
-                plt.bar(x + 0.2, feature_importance_fake, width=0.4, label='Fake Data', alpha=0.8)
+                # plt.bar(x - 0.2, feature_importance_real, width=0.4, label='Real Data', alpha=0.8)
+                # plt.bar(x + 0.2, feature_importance_fake, width=0.4, label='Fake Data', alpha=0.8)
 
-                plt.xticks(ticks=x, labels=x_labels)
-                plt.ylabel('Feature Importance')
-                plt.title('Comparison of Decision Tree Feature Importance (Real vs. Fake)')
-                plt.legend()
-                plt.show()
+                # plt.xticks(ticks=x, labels=x_labels)
+                # plt.ylabel('Feature Importance')
+                # plt.title('Comparison of Decision Tree Feature Importance (Real vs. Fake)')
+                # plt.legend()
+                # plt.show()
+                return regr_metrics_diff_dt, feature_importance_diff_regr
+            
             elif model_name =="mlp":
                 # scaler = StandardScaler() # for normal distr / k-means
                 scaler = MinMaxScaler()
@@ -325,58 +333,62 @@ class Data_evaluation(object):
                 mape_real, evs_real, r2_score_real = self.train_evaluate_algo_regr(x_train_real, y_train_real, x_test_real, y_test_real, model_name)
                 mape_fake, evs_fake, r2_score_fake = self.train_evaluate_algo_regr(x_train_fake, y_train_fake, x_test_real, y_test_real, model_name)
                 regr_metrics_diff_mlp = [abs(mape_real-mape_fake), abs(evs_real-evs_fake), abs(r2_score_real-r2_score_fake)]
+                return regr_metrics_diff_mlp
 
     def calc_min_max(self):
-        
-        gen_max_min = {}
-        gen_mean = {}
-        cat_balance = {}
-        con_max_min = {}
-        con_mean = {}
+        max_min = {}
         for key, value in self.col_types.items():
-            if value == "general":
-                max_min = [[self.real_data[key].max(),self.fake_data[key].max()], [self.real_data [key].min(), self.fake_data [key].min()]]
-                gen_max_min[key] = max_min
-                gen_mean[key] = [self.real_data[key].mean(), self.fake_data[key].mean()]
-            elif value == "categorical":
-                cat_balance[key] = [self.real_data[key].value_counts(), self.fake_data[key].value_counts()]
-            elif value == "continuous":
-                max_min = [[self.real_data[key].max(),self.fake_data[key].max()], [self.real_data[key].min(), self.fake_data[key].min()]]
-                con_max_min[key] = max_min
-                con_mean[key] = [self.real_data[key].mean(), self.fake_data[key].mean()]
-            elif value== "mixed":
+            if value != "categorical":
+                tmp = [[self.real_data[key].max(),self.fake_data[key].max()], [self.real_data [key].min(), self.fake_data [key].min()]]
+                max_min[key] = tmp
+            else:
                 pass
-        return gen_max_min, gen_mean, cat_balance, con_max_min, con_mean
+
+        return max_min
     
     def evaluation_metrics(self):
-        pass
+        jsd_average = self.calc_average_jsd()
+        wd_average = self.calc_average_wd()
+        corr_coef_diff = self.calc_diff_corr_coef()
+        theils_u_diff = self.calc_diff_theils_u()
+        corr_ratio_diff = self.calc_diff_corr_ratio()
+
+        # centroids_diff_fake, centroids_diff_merged, centroids_fake_real, log_cluster_merged, log_cluster_fake_real = self.perform_clustering()
+
+        # self.ml_utility(task, target_col, model_name) #!!! from user, if-else loop
+
+        # max_min = self.calc_min_max()
+
+        # df for metrics
+        # return df
+        return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff
 
     def check_constraints(self): # !!!
-        cat_balance = {}
+        cat_balance_diff = {}
         for key, value in self.col_types.items():
             if value == "categorical":
                 bal_real =self.real_data[key].value_counts().to_numpy()
                 bal_real = bal_real/bal_real.sum()
                 bal_fake = self.fake_data[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
                 bal_fake = bal_fake/bal_fake.sum()
-                cat_balance[key] = [bal_real, bal_fake]
-        return cat_balance
+                cat_balance_diff[key] = bal_real - bal_fake
+        return cat_balance_diff
 
     def check_conditions(self):
         f_data_size = len(self.fake_data)
-        result_cond = []
+        fake_prob_cond = []
         for condition in self.condition_list:
             indicator = (self.fake_data[condition["col1"]] == condition["cat1"]) & (self.fake_data[condition["col2"]] == condition["cat2"])
             count = indicator.sum()
-            result_cond.append(count/f_data_size) # count the fraction of conndition occuarences
+            fake_prob_cond.append(count/f_data_size) # count the fraction of condition occurances
 
         r_data_size = len(self.real_data)
-        orig_result_cond = []
+        real_prob_cond = []
         for condition in self.condition_list:
             indicator = (self.real_data[condition["col1"]] == condition["cat1"]) & (self.real_data[condition["col2"]] == condition["cat2"])
             count = indicator.sum()
-            orig_result_cond.append(count/r_data_size) # count the fraction of conndition occuarences
-        return result_cond, orig_result_cond
+            real_prob_cond.append(count/r_data_size) # count the fraction of condition occurances
+        return fake_prob_cond, real_prob_cond
 
     def get_graphs(self):
         pass
