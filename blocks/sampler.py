@@ -8,7 +8,7 @@ def st_ed_col(target_col, col_names, col_dims): # find indeces (starting and end
     return st, ed
 
 class Sampler(object):
-    def __init__(self, data, col_types, col_names, col_dims, categorical_labels):
+    def __init__(self, data, col_types, col_names, col_dims, categorical_labels, case_name):
         super(Sampler, self).__init__()
         self.data = np.array(data)
         self.col_types = col_types
@@ -17,6 +17,7 @@ class Sampler(object):
         self.data_len = len(data)
         self.categorical_labels = categorical_labels
         self.cat_ones_row_idx = []
+        self.case_name = case_name
 
         for key, value in self.col_types.items(): #categorical_labels
             if value=="categorical":
@@ -37,12 +38,11 @@ class Sampler(object):
             return self.data[idx]
         idx = []
         # col and opt - 1
-        case_name = "cond"
-        if case_name == "actual" or case_name == "constr":
+        if self.case_name == "actual" or self.case_name == "constr":
             for c, o in zip(col, opt):
                 idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
                 
-        elif case_name == "cond" or case_name == "constr_cond":
+        elif self.case_name == "cond" or self.case_name == "constr_cond":
         # col and opt - 2
             for c, o in zip(col, opt):
                 if o[1] == None:

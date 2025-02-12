@@ -1,5 +1,3 @@
-
-
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -27,7 +25,7 @@ class Model_evaluation(object):
     def __init__(self):
         self.penalties = []
 
-    def penalty_measure(self, penalty):
+    def loss_measure(self, penalty):
         penlaty_np = penalty.detach().numpy()
         self.penalties.append(penlaty_np)
 
@@ -39,12 +37,11 @@ class Model_evaluation(object):
         pass
 
 class Data_evaluation(object):
-    def __init__(self, real_data, fake_data, class_balance, condition_list, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes):
+    def __init__(self, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, class_balance=None, condition_list=None, cond_ratio = None):
         self.real_data = real_data
         self.fake_data = fake_data
-        self.class_balance = class_balance
+
         self.mixed_modes = mixed_modes
-        self.condition_list = condition_list
         self.cat_cols = categorical_cols
         self.non_cat_cols = general_cols + continuous_cols + mixed_cols
 
@@ -53,6 +50,21 @@ class Data_evaluation(object):
 
         self.non_cat_real_data = self.real_data[self.non_cat_cols]
         self.non_cat_fake_data = self.fake_data[self.non_cat_cols]
+
+        # cases: actual, constr, cond, constr_cond
+        if class_balance == None and condition_list == None:
+            case_name = "actual"
+        elif class_balance != None and condition_list == None:
+            case_name = "constr"
+        elif class_balance == None and condition_list != None:
+            case_name = "cond"
+        elif class_balance != None and condition_list != None:
+            case_name = "constr_cond"
+        
+        self.case_name = case_name
+        self.class_balance = class_balance
+        self.condition_list = condition_list
+        self.cond_ratio = cond_ratio
 
         self.col_types = {} # col_name: type
         
@@ -345,7 +357,7 @@ class Data_evaluation(object):
                 pass
 
         return max_min
-    
+
     def evaluation_metrics(self):
         jsd_average = self.calc_average_jsd()
         wd_average = self.calc_average_wd()
@@ -375,6 +387,7 @@ class Data_evaluation(object):
         return cat_balance_diff
 
     def check_conditions(self):
+        # self.cond_ratio
         f_data_size = len(self.fake_data)
         fake_prob_cond = []
         for condition in self.condition_list:
@@ -393,3 +406,15 @@ class Data_evaluation(object):
     def get_graphs(self):
         pass
     
+
+    def evaluate_data(self):
+        jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff = self.evaluation_metrics()
+        if self.case_name == "actual":
+            pass
+        elif self.case_name == "constr":
+            cat_balance_diff = self.check_constraints()
+        elif self.case_name == "cond":
+            fake_prob_cond, real_prob_cond = self.check_conditions()
+        elif self.case_name == "constr_cond":
+            pass
+        return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff

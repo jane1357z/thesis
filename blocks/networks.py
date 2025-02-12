@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.nn import (Dropout, LeakyReLU, Linear, Module, ReLU, Sequential, Sigmoid, BCELoss, CrossEntropyLoss,SmoothL1Loss, BatchNorm1d)
@@ -182,3 +183,23 @@ def loss_generator(data, col_names, col_dims, categorical_labels, cat_col_dims, 
     loss = torch.stack(loss, dim=1) # per-feature losses
     # loss * m include only features, that 1 in m (for each sample in batch), loss and m - same shape
     return (loss * m).sum() / data.size()[0] # average loss per sample across the batch (not depending on batch size)
+
+
+def loss_constraint(data, col_names, col_dims, constr_dict):
+    data = data.detach().numpy()
+    loss = 0
+
+    for col, perc in constr_dict.items():
+        col_idx = col_names.index(col)
+        st = col_dims[col_idx][0]
+        ed = col_dims[col_idx][0] + col_dims[col_idx][1]
+        col_data= np.transpose(data[:, st:ed])
+        binary_col_data = (col_data >= 0.5).astype(int)
+        result = np.array([sum(col) for col in binary_col_data]) # count 1s of one-hot encoded column
+        res_percentages = result/result.sum() # probs of each category in each column of one-hot encoded categorical var
+        loss += np.mean((res_percentages - perc) ** 2) # mse for fake data balance class and desired
+    lambda_coef = 100 #!!!
+    loss = lambda_coef*loss
+    loss = torch.tensor(loss, requires_grad=True)
+    return loss
+    

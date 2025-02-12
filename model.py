@@ -5,9 +5,9 @@ from tqdm import tqdm
 
 
 from blocks.data_prep import DataPrep
-from blocks.networks import Classifier, Discriminator, Generator, apply_activate, loss_generator
+from blocks.networks import Classifier, Discriminator, Generator, apply_activate, loss_generator, loss_constraint
 from blocks.sampler import Sampler
-from blocks.cond_constr import Cond_vector, Constraints
+from blocks.cond_constr import Cond_vector
 from blocks.evaluation import Model_evaluation
 
 class Synthesizer:
@@ -28,7 +28,17 @@ class Synthesizer:
         self.classifier_dim = classifier_dim
         self.pac = pac
 
-    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col, class_balance, condition_list):
+    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+        # cases: actual, constr, cond, constr_cond
+        if class_balance == None and condition_list == None:
+            case_name = "actual"
+        elif class_balance != None and condition_list == None:
+            case_name = "constr"
+        elif class_balance == None and condition_list != None:
+            case_name = "cond"
+        elif class_balance != None and condition_list != None:
+            case_name = "constr_cond"
+        
         print("Transformation")
         # transform data        
         self.transformer = DataPrep(row_df=row_data,
@@ -45,13 +55,10 @@ class Synthesizer:
         data_dim = train_data.shape[1]
 
         # initialize Sampler class
-        self.data_sampler = Sampler(train_data, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
+        self.data_sampler = Sampler(train_data, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, case_name)
         
         # initialize cond vector class
-        self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, class_balance, condition_list) # add constraints and conditions
-
-        # initialize Constraints class
-        self.constraints = Constraints(self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels)
+        self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, case_name, cond_ratio, class_balance, condition_list)
 
         # initialize Evaluation class
         self.evaluation_model = Model_evaluation()
@@ -113,7 +120,7 @@ class Synthesizer:
 
                     perm = np.arange(self.batch_size) # get index for condition
                     np.random.shuffle(perm)
-                    # sample from real data based on conditions for con vector
+                    # sample from real data based on conditions for cond vector
                     real = self.data_sampler.sample(self.batch_size, col[perm], opt[perm]) # sample real data of the batch size with correct order of columns and categories
                     real = torch.from_numpy(real.astype('float32'))
 
@@ -175,6 +182,12 @@ class Synthesizer:
 
                 # information loss
 
+                perm = np.arange(self.batch_size) # get index for condition
+                np.random.shuffle(perm)
+                # sample from real data based on conditions for con vector
+                real = self.data_sampler.sample(self.batch_size, col[perm], opt[perm]) # sample real data of the batch size with correct order of columns and categories
+                real = torch.from_numpy(real.astype('float32'))
+
                 # losses without the conditional vector, L2 norm (euqlidian distance)
                 loss_mean = torch.norm(torch.mean(fake_act, dim=0) - torch.mean(real, dim=0), 2)
                 loss_std = torch.norm(torch.std(fake_act, dim=0) - torch.std(real, dim=0), 2)
@@ -188,17 +201,18 @@ class Synthesizer:
                 
                 g_loss_class.backward(retain_graph=True)
                 optimizerG.step()
+                
+                if case_name == "constr_cond" or case_name == "constr":
+                    # penalty_constraint
+                    g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance)
 
-                # g_loss_class + penalty_constraint
-                penalty_constraint = self.constraints.calc_constraint_penalty(fake_act, self.batch_size, class_balance)
+                    self.evaluation_model.loss_measure(g_loss_constr)
 
-                self.evaluation_model.penalty_measure(penalty_constraint)
+                    # total_loss = g_orig_gen + g_loss_info + g_loss_class + g_loss_constr
 
-                # total_loss = g_orig_gen + g_loss_info + g_loss_class + penalty_constraint
-
-                optimizerG.zero_grad()
-                penalty_constraint.backward()
-                optimizerG.step()
+                    optimizerG.zero_grad()
+                    g_loss_constr.backward()
+                    optimizerG.step()
                                 
             epoch += 1
         
