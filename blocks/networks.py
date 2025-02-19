@@ -198,8 +198,8 @@ def loss_constraint(data, col_names, col_dims, constr_dict):
         result = np.array([sum(col) for col in binary_col_data]) # count 1s of one-hot encoded column
         res_percentages = result/result.sum() # probs of each category in each column of one-hot encoded categorical var
         loss += np.mean((res_percentages - perc) ** 2) # mse for fake data balance class and desired
-    lambda_coef = 100 #!!!
-    loss = lambda_coef*loss
+    omega_coef = 100 #!!!
+    loss = omega_coef*loss
     loss = torch.tensor(loss, requires_grad=True)
     return loss
     

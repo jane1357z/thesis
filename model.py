@@ -18,7 +18,8 @@ class Synthesizer:
                  classifier_dim = [256, 256], # (64), list of integers of hidden layers
                  pac=10, # number of samples in one pac
                  batch_size=50,
-                 epochs=50):
+                 epochs=50,
+                 steps_d = 1): # number of updates D for 1 update G
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -27,8 +28,9 @@ class Synthesizer:
         self.discriminator_dim = discriminator_dim
         self.classifier_dim = classifier_dim
         self.pac = pac
+        self.steps_d = steps_d
 
-    def fit(self, row_data, categorical_cols, continuous_cols, mixed_cols, general_cols, clusters_numbers, mode_threshold, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+    def fit(self, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mode_threshold, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
         if class_balance == None and condition_list == None:
             case_name = "actual"
@@ -41,16 +43,16 @@ class Synthesizer:
         
         print("Transformation")
         # transform data        
-        self.transformer = DataPrep(row_df=row_data,
+        self.transformer = DataPrep(raw_df=raw_data,
                     categorical_cols=categorical_cols,
                     general_cols=general_cols,
                     continuous_cols=continuous_cols,
                     mixed_cols=mixed_cols, 
-                    clusters_numbers=clusters_numbers,
+                    components_numbers=components_numbers,
                     mode_threshold=mode_threshold,
                     mixed_modes=mixed_modes)
         
-        train_data = self.transformer.transform(row_data)
+        train_data = self.transformer.transform(raw_data)
 
         data_dim = train_data.shape[1]
 
@@ -72,11 +74,11 @@ class Synthesizer:
 
         print("train C")
         # train C
-        steps_per_epoch=50
-        epochs=100
+        steps_per_epoch_c=50
+        epochs_c=100
         loss = []
-        for i in tqdm(range(epochs)):
-            for id in range(steps_per_epoch):
+        for i in tqdm(range(epochs_c)):
+            for id in range(steps_per_epoch_c):
                 real_pre, real_label = classifier(train_data)
 
                 loss_cc = classifier.loss_classification(real_pre, real_label)
@@ -103,14 +105,13 @@ class Synthesizer:
         # train G and D
 
         epoch = 0
-        steps_d = 1 # number of updates D for 1 update G
         
         steps_per_epoch = max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
         torch.autograd.set_detect_anomaly(True)
         for i in tqdm(range(self.epochs)):
             for id_ in range(steps_per_epoch):
                 # update steps_d times D
-                for _ in range(steps_d):
+                for _ in range(self.steps_d):
                     noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
                     c, m, col, opt = self.cond_vector.sample_train(self.batch_size) # cond vector 
                     c = torch.from_numpy(c)

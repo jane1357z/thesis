@@ -5,8 +5,8 @@ from sklearn.mixture import BayesianGaussianMixture
 
 
 class DataPrep:
-    def __init__(self, row_df: pd.DataFrame, categorical_cols: list, continuous_cols: list, mixed_cols: list, general_cols: list, clusters_numbers: dict, mode_threshold: float, mixed_modes: dict):
-        self.clusters_numbers = clusters_numbers
+    def __init__(self, raw_df: pd.DataFrame, categorical_cols: list, continuous_cols: list, mixed_cols: list, general_cols: list, components_numbers: dict, mode_threshold: float, mixed_modes: dict):
+        self.components_numbers = components_numbers
         self.mixed_modes = mixed_modes
         self.mode_threshold = mode_threshold
 
@@ -21,9 +21,9 @@ class DataPrep:
             self.col_types[col] = "mixed"
         for col in categorical_cols:
             self.col_types[col] = "categorical"
-            # categories_temp = row_df[col].unique()
+            # categories_temp = raw_df[col].unique()
             # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)} #one_hot_dict 
-            self.categorical_labels[col] = np.array(row_df[col].value_counts().index) # row_df[col].unique() # categories for each class
+            self.categorical_labels[col] = np.array(raw_df[col].value_counts().index) # raw_df[col].unique() # categories for each class
         
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
@@ -33,17 +33,17 @@ class DataPrep:
 
 
 
-    def transform(self, row_data):
+    def transform(self, raw_data):
         for key, value in self.col_types.items():
-            current = row_data[key]
+            current = raw_data[key]
             if value == "general":
                 # get min, max values
-                max_v = row_data[key].max()
-                min_v = row_data[key].min()
+                max_v = raw_data[key].max()
+                min_v = raw_data[key].min()
                 self.gen_min_max["min"][key] = min_v
                 self.gen_min_max["max"][key] = max_v
                 # transform
-                feature_transformed = 2*(row_data[key]-min_v)/(max_v-min_v)-1
+                feature_transformed = 2*(raw_data[key]-min_v)/(max_v-min_v)-1
                 feature_transformed = feature_transformed.to_numpy().reshape(-1, 1)
 
                 self.cols_mapping["general"].append([key, 1])
@@ -60,11 +60,11 @@ class DataPrep:
 
             elif value == "continuous":
                 current = current.to_numpy()
-                n_clusters = self.clusters_numbers[key]
+                n_components = self.components_numbers[key]
                 
                 # fit model
                 gm = BayesianGaussianMixture(
-                n_components = n_clusters, 
+                n_components = n_components, 
                 weight_concentration_prior=0.001,  
                 random_state=42)
 
@@ -73,7 +73,7 @@ class DataPrep:
                 old_comp = gm.weights_ > self.mode_threshold # boolean array old_comp; modes with weights below this threshold are considered inactive or insignificant
                 signif_modes_bool = []
 
-                for i in range(n_clusters):
+                for i in range(n_components):
                     if (i in (mode_freq)) & old_comp[i]: # if both conditions are met (the mode is active and its weight is significant)
                         signif_modes_bool.append(True)
                     else:
@@ -98,7 +98,7 @@ class DataPrep:
                     opt_sel[i] = np.random.choice(np.arange(n_opts), p=pp) # sample from probability to choose cluster 
                     
                 idx = np.arange((len(current)))
-                features = np.empty(shape=(len(current.reshape([-1, 1])), n_clusters))
+                features = np.empty(shape=(len(current.reshape([-1, 1])), n_components))
                 features = np.abs(current.reshape([-1, 1]) - means) / (4 * stds) # calculate alphas
                 features = features[:, signif_modes_bool]
                 feature_transformed = features[idx, opt_sel].reshape([-1, 1])
@@ -114,10 +114,10 @@ class DataPrep:
             elif value== "mixed":
                 current = current.to_numpy()
                 filter_cont = ~np.isin(current, self.mixed_modes[key]) # true for categorical part (modes)
-                n_clusters = self.clusters_numbers[key]
+                n_components = self.components_numbers[key]
 
                 gm = BayesianGaussianMixture(
-                    n_components = n_clusters, 
+                    n_components = n_components, 
                     weight_concentration_prior=0.001,  
                     random_state=42)
 
@@ -128,7 +128,7 @@ class DataPrep:
 
                 signif_modes_bool = []
 
-                for i in range(n_clusters):
+                for i in range(n_components):
                     if (i in (mode_freq)) & old_comp[i]: # if both conditions are met (the mode is active and its weight is significant)
                         signif_modes_bool.append(True)
                     else:
@@ -167,7 +167,7 @@ class DataPrep:
                     opt_sel[i] = np.random.choice(np.arange(n_opts), p=pp) # sample from probability to choose cluster
 
                 idx = np.arange((len(current_cont)))
-                features = np.empty(shape=(len(current_cont.reshape([-1, 1])), n_clusters))
+                features = np.empty(shape=(len(current_cont.reshape([-1, 1])), n_components))
                 features = np.abs(current_cont.reshape([-1, 1]) - means) / (4 * stds) # calculate alphas
                 features = features[:, signif_modes_bool]
                 features = features[idx, opt_sel].reshape([-1, 1])
@@ -250,7 +250,7 @@ class DataPrep:
                 df_inverse[elem] = u
             
             elif self.col_types[elem]=="continuous":
-                n_clusters = self.clusters_numbers[elem]
+                n_clusters = self.components_numbers[elem]
                 current = np.array(current)
                 u = np.clip(current[:, 0], -1, 1)
                 v_t = np.ones((len(u), n_clusters)) * -100
@@ -273,7 +273,7 @@ class DataPrep:
                 df_inverse[elem] = tmp
 
             elif self.col_types[elem]=="mixed":
-                n_clusters = self.clusters_numbers[elem]
+                n_clusters = self.components_numbers[elem]
                 means = self.models_cont_mixed["means"][elem]
                 stds = self.models_cont_mixed["stds"][elem]
                 current = np.array(current)

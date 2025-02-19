@@ -235,31 +235,4 @@ class Cond_vector(object):
                     vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
                     vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1
         return vec
-
-class Constraints(object):
-    def __init__(self, col_types, col_names, col_dims, categorical_labels, class_balance):
-        self.col_types = col_types
-        self.col_names = col_names
-        self.col_dims = col_dims
-        self.categorical_labels = categorical_labels
-        self.constr_dict = class_balance
-
-    def loss_constraint(self, data, batch_size):
-        self.data = data.detach().numpy()
-        self.data_len = batch_size
-        penalty = 0
-
-        for col, perc in self.constr_dict.items():
-            col_idx = self.col_names.index(col)
-            st = self.col_dims[col_idx][0]
-            ed = self.col_dims[col_idx][0] + self.col_dims[col_idx][1]
-            col_data= np.transpose(self.data[:, st:ed])
-            binary_col_data = (col_data >= 0.5).astype(int)
-            result = np.array([sum(col) for col in binary_col_data]) # count 1s of one-hot encoded column
-            res_percentages = result/result.sum() # probs of each category in each column of one-hot encoded categorical var
-            penalty += np.mean((res_percentages - perc) ** 2) # mse for fake data balance class and desired
-        lambda_coef = 100 #!!!
-        penalty = lambda_coef*penalty
-        penalty = torch.tensor(penalty, requires_grad=True)
-        return penalty
     
