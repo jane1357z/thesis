@@ -55,7 +55,7 @@ class Cond_vector(object):
                
         self.n_col = len(self.categorical_labels)   # total number of categorical features in the data
         self.n_opt = sum(map(len, self.categorical_labels.values()))  # total number of options in feature
-        self.p_log = np.zeros((self.n_col, max(map(len, self.categorical_labels.values()))))  # stores log probs
+        # self.p_log = np.zeros((self.n_col, max(map(len, self.categorical_labels.values()))))  # stores log probs
         self.p_sampling = [] # stores the raw probabilities for sampling from the categories of a specific feature
         counter = 0
         for key, value in self.categorical_labels.items():
@@ -66,10 +66,10 @@ class Cond_vector(object):
             self.p_sampling.append(tmp_prob)
 
             #### not needed
-            tmp_occur = np.sum(self.data[:, st:ed], axis=0)  # occurrences of each category
-            tmp_occur = np.log(tmp_occur + 1) # (log(x + 1)) to smooth out the counts and normalize them into probabilities, creates a less extreme distribution when sampling.
-            tmp_log_prob = tmp_occur / np.sum(tmp_occur) # Normalized into probabilities log-transform occurrences  of each category in the column
-            self.p_log[counter, :len(value)] = tmp_log_prob
+            # tmp_occur = np.sum(self.data[:, st:ed], axis=0)  # occurrences of each category
+            # tmp_occur = np.log(tmp_occur + 1) # (log(x + 1)) to smooth out the counts and normalize them into probabilities, creates a less extreme distribution when sampling.
+            # tmp_log_prob = tmp_occur / np.sum(tmp_occur) # Normalized into probabilities log-transform occurrences  of each category in the column
+            # self.p_log[counter, :len(value)] = tmp_log_prob
             ####
 
             counter += 1
@@ -86,10 +86,10 @@ class Cond_vector(object):
         option_list = []
         class_balance_col = list(self.class_balance.keys())[0]
         for i in col_idx:
-            if list(self.categorical_labels.keys())[i] == class_balance_col:
-                pp = self.class_balance[class_balance_col]
+            if list(self.categorical_labels.keys())[i] == class_balance_col: # check if the columns is in constraint
+                pp = self.class_balance[class_balance_col] # sampling basen on user`s constraint probability (class balance) for this columns
                 option_list.append(np.random.choice(np.arange(len(pp)), p=pp))
-            else:
+            else: # if column is not in constraint, then sample from actual probabilities (probs)
                 pp = probs[i]
                 option_list.append(np.random.choice(np.arange(len(probs[i])), p=pp))
 

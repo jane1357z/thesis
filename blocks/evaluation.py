@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+import category_encoders as ce
+
 from torchmetrics import Accuracy  # for binary or multi-class classification
 from sklearn import metrics
 import seaborn as sns
@@ -18,7 +20,6 @@ import matplotlib.cm as cm
 from sklearn import tree
 from sklearn import metrics
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
-from sklearn import model_selection
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 class Model_evaluation(object):
@@ -35,9 +36,11 @@ class Model_evaluation(object):
 
     def check_timers(self):
         pass
+    def evaluate_model(self):
+        pass
 
 class Data_evaluation(object):
-    def __init__(self, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, class_balance=None, condition_list=None, cond_ratio = None):
+    def __init__(self, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         self.real_data = real_data
         self.fake_data = fake_data
 
@@ -45,26 +48,58 @@ class Data_evaluation(object):
         self.cat_cols = categorical_cols
         self.non_cat_cols = general_cols + continuous_cols + mixed_cols
 
-        self.cat_real_data = self.real_data[self.cat_cols]
-        self.cat_fake_data = self.fake_data[self.cat_cols]
-
-        self.non_cat_real_data = self.real_data[self.non_cat_cols]
-        self.non_cat_fake_data = self.fake_data[self.non_cat_cols]
+        self.task = task
+        self.target_col = target_col
 
         # cases: actual, constr, cond, constr_cond
         if class_balance == None and condition_list == None:
             case_name = "actual"
         elif class_balance != None and condition_list == None:
             case_name = "constr"
+            self.real_data_constr = real_data
+            self.fake_data_constr = fake_data
+
+            self.class_balance = class_balance
+
         elif class_balance == None and condition_list != None:
             case_name = "cond"
+            self.condition_list = condition_list
+            self.cond_ratio = cond_ratio
+
+
+            n_samples = len(self.fake_data) # length of the real data for comparison   !!maybe other algo
+            # find indices in real data for conditioned rows and not conditioned separately
+            ind_cond = real_data.index[(real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
+            ind_rest = real_data.index[~((real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"]))].to_numpy()
+
+            real_cond_count = len(ind_cond) # how many conditioned rows in real data
+            self.real_cond_count = real_cond_count
+            
+            if real_cond_count < n_samples*cond_ratio: # if there are not enough conditioned rows in real data
+                r_data_size = len(self.real_data)
+                cond_ratio =self.real_cond_count/r_data_size
+
+            choices = np.random.choice([0, 1], size=n_samples, p=[cond_ratio, 1-cond_ratio]) # get choice from which array to sample based on cond_ratio
+
+            cond_sample = np.random.choice(ind_cond, size=np.sum(choices == 0), replace=False) # sample cond rows from indices
+            rest_sample = np.random.choice(ind_rest, size=np.sum(choices == 1), replace=False) # sample rest rows from indices
+
+            indices = np.empty(n_samples, dtype=int) # concatinate sampled indices
+            indices[choices == 0] = cond_sample
+            indices[choices == 1] = rest_sample
+
+            self.real_data_cond = real_data.iloc[indices, :].reset_index(drop=True) # get conditioned dataframe
+
+
+
         elif class_balance != None and condition_list != None:
             case_name = "constr_cond"
+            self.class_balance = class_balance
+            self.condition_list = condition_list
+            self.cond_ratio = cond_ratio
         
         self.case_name = case_name
-        self.class_balance = class_balance
-        self.condition_list = condition_list
-        self.cond_ratio = cond_ratio
+
 
         self.col_types = {} # col_name: type
         
@@ -77,12 +112,12 @@ class Data_evaluation(object):
         for col in categorical_cols:
             self.col_types[col] = "categorical"
 
-    def calc_average_jsd(self):
+    def calc_average_jsd(self, cat_real, cat_fake):
         features = self.cat_cols
         jsd = []
         for col in features:
-            real_pdf = dict(self.cat_real_data[col].value_counts()/self.cat_real_data[col].value_counts().sum())
-            fake_pdf = dict(self.cat_fake_data[col].value_counts()/self.cat_fake_data[col].value_counts().sum())
+            real_pdf = dict(cat_real[col].value_counts()/cat_real[col].value_counts().sum())
+            fake_pdf = dict(cat_fake[col].value_counts()/cat_fake[col].value_counts().sum())
             for key in real_pdf: # can be error, if prob=0 => no element
                 fake_pdf.setdefault(key, 0)
             real_pdf_sorted = [v for k, v in sorted(real_pdf.items())]
@@ -93,117 +128,126 @@ class Data_evaluation(object):
         jsd_average = sum(jsd)/len(jsd)
         return jsd_average
         
-    def calc_average_wd(self):
+    def calc_average_wd(self, non_cat_real, non_cat_fake):
         features = self.non_cat_cols
         wd = []
 
-        # scaler = MinMaxScaler() 
+        scaler = MinMaxScaler() 
 
         for col in features:
-            # col_scaled_real = scaler.fit_transform(self.non_cat_real_data[col].to_numpy().reshape(-1, 1)).ravel()
-            # col_scaled_fake = scaler.fit_transform(self.non_cat_fake_data[col].to_numpy().reshape(-1, 1)).ravel()
-            wd_score = wasserstein_distance(self.non_cat_real_data[col].to_numpy(), self.non_cat_fake_data[col].to_numpy()) # wasserstein_distance(col_scaled_real, col_scaled_fake) # 
+            col_scaled_real = scaler.fit_transform(non_cat_real[col].to_numpy().reshape(-1, 1)).ravel()
+            col_scaled_fake = scaler.transform(non_cat_fake[col].to_numpy().reshape(-1, 1)).ravel()
+            wd_score = wasserstein_distance(col_scaled_real, col_scaled_fake) # wasserstein_distance(non_cat_real[col].to_numpy(), non_cat_fake[col].to_numpy())
             wd.append(wd_score)
         wd_average = sum(wd)/len(wd)
         return wd_average
          
-    def calc_diff_corr_coef(self):
-        real_corr = np.triu(self.non_cat_real_data.corr(method = 'spearman')) # pearson
-        fake_corr = np.triu(self.non_cat_fake_data.corr(method = 'spearman'))
-        corr_coef_diff = np.sum(np.abs(real_corr - fake_corr)) #/np.size(real_matrix)
+    def calc_diff_corr_coef(self, non_cat_real, non_cat_fake):
+        real_corr = np.triu(non_cat_real.corr(method = 'spearman')) # pearson
+        fake_corr = np.triu(non_cat_fake.corr(method = 'spearman'))
+        corr_coef_diff = np.sum(np.abs(fake_corr - real_corr)) #/np.size(real_matrix)
         return corr_coef_diff
     
-    def calc_diff_theils_u(self):
+    def calc_diff_theils_u(self, cat_real, cat_fake):
         features = self.cat_cols
         real_theils = np.zeros([len(self.cat_cols), len(self.cat_cols)])
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
-                theils_coef = theils_u(self.cat_real_data[var1], self.cat_real_data[var2])
+                theils_coef = theils_u(cat_real[var1], cat_real[var2])
                 real_theils[self.cat_cols.index(var1),self.cat_cols.index(var2)] = theils_coef
 
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
-                theils_coef = theils_u(self.cat_real_data[var2], self.cat_real_data[var1])
+                theils_coef = theils_u(cat_real[var2], cat_real[var1])
                 real_theils[self.cat_cols.index(var2),self.cat_cols.index(var1)] = theils_coef
 
         fake_theils = np.zeros([len(self.cat_cols), len(self.cat_cols)])
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
-                theils_coef = theils_u(self.cat_fake_data[var1], self.cat_fake_data[var2])
+                theils_coef = theils_u(cat_fake[var1], cat_fake[var2])
                 fake_theils[self.cat_cols.index(var1),self.cat_cols.index(var2)] = theils_coef
 
 
         for i, var1 in enumerate(features):
             for var2 in features[i+1:]:
-                theils_coef = theils_u(self.cat_fake_data[var2], self.cat_fake_data[var1])
+                theils_coef = theils_u(cat_fake[var2], cat_fake[var1])
                 fake_theils[self.cat_cols.index(var2),self.cat_cols.index(var1)] = theils_coef
-        theils_u_diff = np.sum(np.abs(real_theils - fake_theils))
+        theils_u_diff = np.sum(np.abs(fake_theils - real_theils))
         return theils_u_diff
     
-    def calc_diff_corr_ratio(self):
+    def calc_diff_corr_ratio(self, cat_real, cat_fake, non_cat_real, non_cat_fake):
         real_corr_ratio = np.zeros([len(self.cat_cols), len(self.non_cat_cols)])
 
         for cat_var in self.cat_cols:
             for con_var in self.non_cat_cols:
-                corr_ratio = correlation_ratio(self.cat_real_data[cat_var], self.non_cat_real_data[con_var])
+                corr_ratio = correlation_ratio(cat_real[cat_var], non_cat_real[con_var])
                 real_corr_ratio[self.cat_cols.index(cat_var), self.non_cat_cols.index(con_var)] = corr_ratio
 
         fake_corr_ratio = np.zeros([len(self.cat_cols), len(self.non_cat_cols)])
     
         for cat_var in self.cat_cols:
             for con_var in self.non_cat_cols:
-                corr_ratio = correlation_ratio(self.cat_fake_data[cat_var], self.non_cat_fake_data[con_var])
+                corr_ratio = correlation_ratio(cat_fake[cat_var], non_cat_fake[con_var])
                 fake_corr_ratio[self.cat_cols.index(cat_var), self.non_cat_cols.index(con_var)] = corr_ratio
-        corr_ratio_diff = np.sum(np.abs(real_corr_ratio - fake_corr_ratio))
+        corr_ratio_diff = np.sum(np.abs(fake_corr_ratio - real_corr_ratio))
         return corr_ratio_diff
 
-    def perform_clustering(self):
-        m_clusters = 4
-        # real fake separately
-        kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        labels_real = kmeans_cluster.fit_predict(self.real_data)
-        centroids_real = kmeans_cluster.cluster_centers_ 
+    def perform_clustering(self, real, fake):
+        sil_scores = []
+        for k in range(2, 7):
+            kmeans = KMeans(init = "random", n_clusters = k)
+            labels = kmeans.fit_predict(real)
 
-        kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        labels_fake = kmeans_cluster.fit_predict(self.fake_data)
-        centroids_fake = kmeans_cluster.cluster_centers_ 
+            silhouette_avg = silhouette_score(real, labels)
+            sil_scores.append(silhouette_avg)
+
+        m_clusters = sil_scores.index(max(sil_scores))+2
+
+        # # real fake separately
+        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
+        # labels_real = kmeans_cluster.fit_predict(real)
+        # centroids_real = kmeans_cluster.cluster_centers_ 
+
+        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
+        # labels_fake = kmeans_cluster.fit_predict(fake)
+        # centroids_fake = kmeans_cluster.cluster_centers_ 
         
-        centroids_diff_fake = np.sum(np.abs(centroids_real - centroids_fake))
+        # centroids_diff_fake = np.sum(np.abs(centroids_real - centroids_fake))
         
         # log cluster, merged data
-        merged_data = np.vstack((self.real_data, self.fake_data))
-        labels_merged = np.array([1] * len(self.real_data) + [0] * len(self.fake_data))  # 1 for real, 0 for synthetic
+        merged_data = np.vstack((real, fake))
+        labels_merged = np.array([1] * len(real) + [0] * len(fake))  # 1 for real, 0 for synthetic
 
-        n_R = len(self.real_data)
-        n_S = len(self.fake_data)
+        n_R = len(real)
+        n_S = len(fake)
         c = n_R / (n_R + n_S)
 
         kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
         labels_clustered = kmeans_cluster.fit_predict(merged_data)
-        centroids_merged = kmeans_cluster.cluster_centers_ 
-        centroids_diff_merged = np.sum(np.abs(centroids_real - centroids_merged))
+        # centroids_merged = kmeans_cluster.cluster_centers_ 
+        # centroids_diff_merged = np.sum(np.abs(centroids_real - centroids_merged))
 
         n_R_i = np.array([np.sum(labels_merged[labels_clustered == i]) for i in range(m_clusters)])
         n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
         log_cluster_merged = np.log(np.mean(((n_R_i / n_i) - c)**2))
 
         # log cluster , real data - gold value
-        
-        real_fake_data = self.real_data.copy()
-        real_fake_data = real_fake_data.sample(frac=1).reset_index(drop=True)
-        # labels_r_s = np.array([1] * len_r + [0] * len_s) 
-        labels_r_s = np.random.choice([0, 1], size=len(self.real_data))
-        n_R = np.count_nonzero(labels_r_s)
-        n_S = labels_r_s.size - n_R
-        c = n_R / (n_R + n_S)
-        kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        labels_clustered = kmeans_cluster.fit_predict(real_fake_data)
-        centroids_fake_real = kmeans_cluster.cluster_centers_ 
+        # real_fake_data = real.copy()
+        # real_fake_data = real_fake_data.sample(frac=1).reset_index(drop=True)
+        # # labels_r_s = np.array([1] * len_r + [0] * len_s) 
+        # labels_r_s = np.random.choice([0, 1], size=len(real))
+        # n_R = np.count_nonzero(labels_r_s)
+        # n_S = labels_r_s.size - n_R
+        # c = n_R / (n_R + n_S)
+        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
+        # labels_clustered = kmeans_cluster.fit_predict(real_fake_data)
+        # centroids_fake_real = kmeans_cluster.cluster_centers_ 
 
-        n_R_i = np.array([np.sum(labels_r_s[labels_clustered == i]) for i in range(m_clusters)])
-        n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
-        log_cluster_fake_real = np.log(np.mean(((n_R_i / n_i) - c) ** 2))
-        return centroids_diff_fake, centroids_diff_merged, centroids_fake_real, log_cluster_merged, log_cluster_fake_real
+        # n_R_i = np.array([np.sum(labels_r_s[labels_clustered == i]) for i in range(m_clusters)])
+        # n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
+        # log_cluster_fake_real = np.log(np.mean(((n_R_i / n_i) - c) ** 2))
+
+        return log_cluster_merged
     
     def train_evaluate_algo_class(self, x_train, y_train, x_test, y_test, model_name):
         if model_name == "dt":
@@ -254,167 +298,235 @@ class Data_evaluation(object):
         else:
             return mape, evs, r2_score_
 
-    def ml_utility(self, task, target_col, model_name):
+    def ml_utility(self, real, fake, task, target_col, model_name):
         # delete classes, which are too small
         ## assume, len(fake)<len(real)
 
         non_target_cols = [x for x in list(self.col_types.keys()) if x != target_col]
-        fake_data_indep = self.fake_data.loc[:, non_target_cols]
-        fake_data_dep = self.fake_data.loc[:, target_col]
-        real_data_indep = self.real_data.iloc[:, non_target_cols].sample(len(fake_data_indep))
-        real_data_dep = self.real_data.loc[:, target_col].sample(len(fake_data_indep))
 
-        x_train_real, x_test_real, y_train_real, y_test_real = model_selection.train_test_split(real_data_indep ,real_data_dep, test_size=0.2,random_state=42) 
-        x_train_fake, _ , y_train_fake, _ = model_selection.train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
-
-        task = "class" # "regr"
-        model_name = "dt" # mlp"
         if task == "class":
             if model_name == "dt":
+                fake_data_indep = fake.loc[:, non_target_cols]
+                fake_data_dep = fake[[target_col]]
+                real_data_indep = real.loc[:, non_target_cols].sample(len(fake))
+                real_data_dep = real[[target_col]].sample(len(fake))
+
+                x_train_real, x_test_real, y_train_real, y_test_real = train_test_split(real_data_indep ,real_data_dep, test_size=0.2,random_state=42) 
+                x_train_fake, _ , y_train_fake, _ = train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
+
                 acc_real, auc_real, f1_score_real, feature_importance_real = self.train_evaluate_algo_class(x_train_real, y_train_real, x_test_real, y_test_real, model_name)
                 acc_fake, auc_fake, f1_score_fake, feature_importance_fake = self.train_evaluate_algo_class(x_train_fake, y_train_fake, x_test_real, y_test_real, model_name)
-                class_metrics_diff_dt = [abs(acc_real-acc_fake), abs(auc_real-auc_fake), abs(f1_score_real-f1_score_fake)]
+                class_metrics_diff_dt = [abs(acc_fake-acc_real), abs(auc_fake-auc_real), abs(f1_score_fake-f1_score_real)]
                 # Detects missing correlations: If some features become less important in the fake data, the GAN might not be learning their dependencies correctly.
-                feature_importance_diff_class = feature_importance_real-feature_importance_fake
+                feature_importance_diff_class = feature_importance_fake - feature_importance_real
                 
-                # graph ##!!! save to png
-                # x_labels = non_target_cols
-                # x = np.arange(len(x_labels))
+                # feature importance graph
+                x = np.arange(len(non_target_cols))
 
-                # plt.bar(x - 0.2, feature_importance_real, width=0.4, label='Real Data', alpha=0.8)
-                # plt.bar(x + 0.2, feature_importance_fake, width=0.4, label='Fake Data', alpha=0.8)
+                plt.bar(x - 0.15, feature_importance_real, width=0.3, label='Real Data', alpha=0.9)
+                plt.bar(x + 0.15, feature_importance_fake, width=0.3, label='Fake Data', alpha=0.9)
 
-                # plt.xticks(ticks=x, labels=x_labels)
-                # plt.ylabel('Feature Importance')
-                # plt.title('Comparison of Decision Tree Feature Importance (Real vs. Fake)')
-                # plt.legend()
-                # plt.show()
+                plt.xticks(ticks=x, labels=non_target_cols, rotation=60)
+                plt.ylabel('Feature Importance')
+                plt.title('DT Feature Importance')
+                plt.legend()
+                plt.savefig("DT Feature Importance.png", dpi=300, bbox_inches='tight')
+
                 return class_metrics_diff_dt, feature_importance_diff_class
             
             elif model_name == "mlp":
-                # scaler = StandardScaler() # for normal distr / k-means
-                scaler = MinMaxScaler()
-                scaler.fit(real_data_indep)
-                x_train_real = scaler.transform(x_train_real)
-                x_test_real = scaler.transform(x_test_real)
 
-                # scaler = StandardScaler() # for normal distr / k-means
+                #### data scaling / encoding
+                fake_data_indep_init = fake.loc[:, non_target_cols]
+                real_data_indep_init = real.loc[:, non_target_cols].sample(len(fake))
+
+                cat_cols_mlp = self.cat_cols
+                non_cat_cols_mlp = self.non_cat_cols
+                if target_col in cat_cols_mlp:
+                    cat_cols_mlp.remove(target_col)
+                if target_col in non_cat_cols_mlp:
+                    non_cat_cols_mlp.remove(target_col)
+
+                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                cat_feature_transformed = encoder.fit_transform(real_data_indep_init.loc[:, cat_cols_mlp])
+
                 scaler = MinMaxScaler()
-                scaler.fit(fake_data_indep)
-                x_train_fake = scaler.transform(x_train_fake)
+                non_cat_feature_transformed = scaler.fit_transform(real_data_indep_init.loc[:, non_cat_cols_mlp])
+                real_data_indep = np.hstack((cat_feature_transformed, non_cat_feature_transformed)) 
+
+                real_data_dep = pd.DataFrame()
+                real_data_dep = real[target_col].astype('category').cat.codes.replace(-1, np.nan).sample(len(fake)).values.ravel()
+
+                cat_feature_transformed = encoder.transform(fake_data_indep_init.loc[:, cat_cols_mlp])
+                non_cat_feature_transformed = scaler.transform(fake_data_indep_init.loc[:, non_cat_cols_mlp])
+                fake_data_indep = np.hstack((cat_feature_transformed, non_cat_feature_transformed)) 
+
+                fake_data_dep = pd.DataFrame()
+                fake_data_dep = fake[target_col].astype('category').cat.codes.replace(-1, np.nan).values.ravel()
+                ####
+
+                x_train_real, x_test_real, y_train_real, y_test_real = train_test_split(real_data_indep,real_data_dep, test_size=0.2,random_state=42) 
+                
+                x_train_fake, _ , y_train_fake, _ = train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
 
                 acc_real, auc_real, f1_score_real = self.train_evaluate_algo_class(x_train_real, y_train_real, x_test_real, y_test_real, model_name)
                 acc_fake, auc_fake, f1_score_fake = self.train_evaluate_algo_class(x_train_fake, y_train_fake, x_test_real, y_test_real, model_name)
 
-                class_metrics_diff_mlp = [abs(acc_real-acc_fake), abs(auc_real-auc_fake), abs(f1_score_real-f1_score_fake)]
+                class_metrics_diff_mlp = [abs(acc_fake-acc_real), abs(auc_fake-auc_real), abs(f1_score_fake-f1_score_real)]
                 return class_metrics_diff_mlp
             
         elif task == "regr":
             if model_name == "dt":
+                fake_data_indep = fake.loc[:, non_target_cols]
+                fake_data_dep = fake[[target_col]]
+                real_data_indep = real.loc[:, non_target_cols].sample(len(fake))
+                real_data_dep = real[[target_col]].sample(len(fake))
+
+                x_train_real, x_test_real, y_train_real, y_test_real = train_test_split(real_data_indep,real_data_dep, test_size=0.2,random_state=42) 
+                x_train_fake, _ , y_train_fake, _ = train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
+
                 mape_real, evs_real, r2_score_real, feature_importance_real = self.train_evaluate_algo_regr(x_train_real, y_train_real, x_test_real, y_test_real, model_name)
                 mape_fake, evs_fake, r2_score_fake, feature_importance_fake = self.train_evaluate_algo_regr(x_train_fake, y_train_fake, x_test_real, y_test_real, model_name)
-                regr_metrics_diff_dt = [abs(mape_real-mape_fake), abs(evs_real-evs_fake), abs(r2_score_real-r2_score_fake)]
-                feature_importance_diff_regr = feature_importance_real-feature_importance_fake
+                regr_metrics_diff_dt = [abs(mape_fake-mape_real), abs(evs_fake-evs_real), abs(r2_score_fake-r2_score_real)]
+                feature_importance_diff_regr = feature_importance_fake-feature_importance_real
 
-                # graph #!!! save png
-                # x_labels = non_target_cols
-                # x = np.arange(len(x_labels))
+                # feature importance graph
+                x = np.arange(len(non_target_cols))
 
-                # plt.bar(x - 0.2, feature_importance_real, width=0.4, label='Real Data', alpha=0.8)
-                # plt.bar(x + 0.2, feature_importance_fake, width=0.4, label='Fake Data', alpha=0.8)
+                plt.bar(x - 0.15, feature_importance_real, width=0.3, label='Real Data', alpha=0.9)
+                plt.bar(x + 0.15, feature_importance_fake, width=0.3, label='Fake Data', alpha=0.9)
 
-                # plt.xticks(ticks=x, labels=x_labels)
-                # plt.ylabel('Feature Importance')
-                # plt.title('Comparison of Decision Tree Feature Importance (Real vs. Fake)')
-                # plt.legend()
-                # plt.show()
+                plt.xticks(ticks=x, labels=non_target_cols, rotation=60)
+                plt.ylabel('Feature Importance')
+                plt.title('DT Feature Importance')
+                plt.legend()
+                plt.savefig("DT Feature Importance.png", dpi=300, bbox_inches='tight')
+
                 return regr_metrics_diff_dt, feature_importance_diff_regr
             
             elif model_name =="mlp":
-                # scaler = StandardScaler() # for normal distr / k-means
-                scaler = MinMaxScaler()
-                scaler.fit(real_data_indep)
-                x_train_real = scaler.transform(x_train_real)
-                x_test_real = scaler.transform(x_test_real)
 
-                # scaler = StandardScaler() # for normal distr / k-means
+                #### data scaling / encoding
+                fake_data_indep_init = fake.loc[:, non_target_cols]
+                fake_data_dep = fake[[target_col]].values.ravel()
+                real_data_indep_init = real.loc[:, non_target_cols].sample(len(fake))
+                real_data_dep = real[[target_col]].sample(len(fake)).values.ravel()
+
+                cat_cols_mlp = self.cat_cols
+                non_cat_cols_mlp = self.non_cat_cols
+                if target_col in cat_cols_mlp:
+                    cat_cols_mlp.remove(target_col)
+                if target_col in non_cat_cols_mlp:
+                    non_cat_cols_mlp.remove(target_col)
+
+                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                cat_feature_transformed = encoder.fit_transform(real_data_indep_init.loc[:, cat_cols_mlp])
                 scaler = MinMaxScaler()
-                scaler.fit(fake_data_indep)
-                x_train_fake = scaler.transform(x_train_fake)
+                non_cat_feature_transformed = scaler.fit_transform(real_data_indep_init.loc[:, non_cat_cols_mlp])
+                real_data_indep = np.hstack((cat_feature_transformed, non_cat_feature_transformed)) 
+
+                cat_feature_transformed = encoder.transform(fake_data_indep_init.loc[:, cat_cols_mlp])
+                non_cat_feature_transformed = scaler.transform(fake_data_indep_init.loc[:, non_cat_cols_mlp])
+                fake_data_indep = np.hstack((cat_feature_transformed, non_cat_feature_transformed)) 
+                ####
+
+                x_train_real, x_test_real, y_train_real, y_test_real = train_test_split(real_data_indep,real_data_dep, test_size=0.2,random_state=42) 
+
+                x_train_fake, _ , y_train_fake, _ = train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
 
                 mape_real, evs_real, r2_score_real = self.train_evaluate_algo_regr(x_train_real, y_train_real, x_test_real, y_test_real, model_name)
                 mape_fake, evs_fake, r2_score_fake = self.train_evaluate_algo_regr(x_train_fake, y_train_fake, x_test_real, y_test_real, model_name)
-                regr_metrics_diff_mlp = [abs(mape_real-mape_fake), abs(evs_real-evs_fake), abs(r2_score_real-r2_score_fake)]
+                regr_metrics_diff_mlp = [abs(mape_fake-mape_real), abs(evs_fake-evs_real), abs(r2_score_fake-r2_score_real)]
                 return regr_metrics_diff_mlp
 
-    def calc_min_max(self):
+    def calc_min_max(self, real, fake):
         max_min = {}
         for key, value in self.col_types.items():
             if value != "categorical":
-                tmp = [[self.real_data[key].max(),self.fake_data[key].max()], [self.real_data [key].min(), self.fake_data [key].min()]]
+                tmp = [fake[key].max()-real[key].max(), fake[key].min()-real[key].min()]
                 max_min[key] = tmp
             else:
                 pass
 
         return max_min
 
-    def evaluation_metrics(self):
-        jsd_average = self.calc_average_jsd()
-        wd_average = self.calc_average_wd()
-        corr_coef_diff = self.calc_diff_corr_coef()
-        theils_u_diff = self.calc_diff_theils_u()
-        corr_ratio_diff = self.calc_diff_corr_ratio()
+    def evaluation_metrics(self, real):
+        fake = self.fake_data
+        cat_real = real[self.cat_cols] # only categorical data columns
+        cat_fake = fake[self.cat_cols] # only categorical data columns
 
-        # centroids_diff_fake, centroids_diff_merged, centroids_fake_real, log_cluster_merged, log_cluster_fake_real = self.perform_clustering()
+        non_cat_real = real[self.non_cat_cols] # only non categorical data columns
+        non_cat_fake = fake[self.non_cat_cols] # only non categorical data columns
 
-        # self.ml_utility(task, target_col, model_name) #!!! from user, if-else loop
+        jsd_average = self.calc_average_jsd(cat_real, cat_fake)
+        wd_average = self.calc_average_wd(non_cat_real, non_cat_fake)
+        corr_coef_diff = self.calc_diff_corr_coef(non_cat_real, non_cat_fake)
+        theils_u_diff = self.calc_diff_theils_u(cat_real, cat_fake)
+        corr_ratio_diff = self.calc_diff_corr_ratio(cat_real, cat_fake, non_cat_real, non_cat_fake)
 
-        # max_min = self.calc_min_max()
+        log_cluster_merged = self.perform_clustering(real, fake)
+        
+        for model_name in ["dt", "mlp"]:
+            if model_name == "dt":
+                metrics_diff_dt, feature_importance_diff = self.ml_utility(real, fake, self.task, self.target_col, model_name)
+            else:
+                metrics_diff_mlp = self.ml_utility(real, fake, self.task, self.target_col, model_name)
+        max_min = self.calc_min_max(real, fake)
 
         # df for metrics
         # return df
-        return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff
+        return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp
 
-    def check_constraints(self): # !!!
-        cat_balance_diff = {}
+    def check_constraints(self):
+        fake = self.fake_data
+        # cat_balance_diff = {}
         for key, value in self.col_types.items():
-            if value == "categorical":
-                bal_real =self.real_data[key].value_counts().to_numpy()
-                bal_real = bal_real/bal_real.sum()
-                bal_fake = self.fake_data[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
+            # if value == "categorical":
+            #     bal_real =self.real_data[key].value_counts().to_numpy()
+            #     bal_real = bal_real/bal_real.sum()
+            #     bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
+            #     bal_fake = bal_fake/bal_fake.sum()
+            #     cat_balance_diff[key] = bal_real - bal_fake
+            if key in self.class_balance.keys():
+                bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
                 bal_fake = bal_fake/bal_fake.sum()
-                cat_balance_diff[key] = bal_real - bal_fake
-        return cat_balance_diff
+                class_balance_diff = np.mean((bal_fake - self.class_balance[key]) ** 2) # MSE
+        return class_balance_diff
 
     def check_conditions(self):
-        # self.cond_ratio
-        f_data_size = len(self.fake_data)
+        fake = self.fake_data
+        f_data_size = len(fake)
         fake_prob_cond = []
         for condition in self.condition_list:
-            indicator = (self.fake_data[condition["col1"]] == condition["cat1"]) & (self.fake_data[condition["col2"]] == condition["cat2"])
+            indicator = (fake[condition["col1"]] == condition["cat1"]) & (fake[condition["col2"]] == condition["cat2"])
             count = indicator.sum()
             fake_prob_cond.append(count/f_data_size) # count the fraction of condition occurances
-
+        
+        cond_prob_diff = fake_prob_cond[0] - self.cond_ratio
+        
         r_data_size = len(self.real_data)
         real_prob_cond = []
-        for condition in self.condition_list:
-            indicator = (self.real_data[condition["col1"]] == condition["cat1"]) & (self.real_data[condition["col2"]] == condition["cat2"])
-            count = indicator.sum()
-            real_prob_cond.append(count/r_data_size) # count the fraction of condition occurances
-        return fake_prob_cond, real_prob_cond
+        real_prob_cond.append(self.real_cond_count/r_data_size) # count the fraction of condition occurances in real data
+
+        cond_prob_diff = [self.cond_ratio, fake_prob_cond, real_prob_cond]
+        return cond_prob_diff
 
     def get_graphs(self):
         pass
     
 
     def evaluate_data(self):
-        jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff = self.evaluation_metrics()
+        # real data depends on the case, fake data is the same
+        jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp= self.evaluation_metrics(self.real_data)
         if self.case_name == "actual":
             pass
+            # jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp= self.evaluation_metrics(self.real_data)
         elif self.case_name == "constr":
-            cat_balance_diff = self.check_constraints()
+            cat_balance_diff = self.check_constraints(self.real_data_constr)
+            jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp = self.evaluation_metrics(self.real_data_constr)
         elif self.case_name == "cond":
-            fake_prob_cond, real_prob_cond = self.check_conditions()
+            cond_prob_diff= self.check_conditions()
+            jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp = self.evaluation_metrics(self.real_data_cond)
         elif self.case_name == "constr_cond":
             pass
         return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff

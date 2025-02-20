@@ -57,7 +57,7 @@ class Sampler(object):
                     if intersection.size > 0:
                         idx.append(np.random.choice(intersection))
                     else:
-                        idx = np.random.choice(np.arange(self.data_len), 1) #!!!
+                        idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
 
         return self.data[idx]
     

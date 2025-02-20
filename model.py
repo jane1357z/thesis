@@ -16,6 +16,8 @@ class Synthesizer:
                  generator_dim=[256, 256], # list of integers, size(s) of hidden layers
                  discriminator_dim=[256, 256], # list of integers, size(s) of hidden layers
                  classifier_dim = [256, 256], # (64), list of integers of hidden layers
+                 constr_loss_coef = 100, # constraint loss coefficient
+                 mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=50,
                  epochs=50,
@@ -29,8 +31,10 @@ class Synthesizer:
         self.classifier_dim = classifier_dim
         self.pac = pac
         self.steps_d = steps_d
+        self.constr_loss_coef = constr_loss_coef
+        self.mode_threshold = mode_threshold
 
-    def fit(self, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mode_threshold, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+    def fit(self, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
         if class_balance == None and condition_list == None:
             case_name = "actual"
@@ -49,7 +53,7 @@ class Synthesizer:
                     continuous_cols=continuous_cols,
                     mixed_cols=mixed_cols, 
                     components_numbers=components_numbers,
-                    mode_threshold=mode_threshold,
+                    mode_threshold=self.mode_threshold,
                     mixed_modes=mixed_modes)
         
         train_data = self.transformer.transform(raw_data)
@@ -164,12 +168,12 @@ class Synthesizer:
                 fake_c = torch.cat([fake_act, c], dim=1) # concatenate feature and cond vector
 
                 y_fake = discriminator(fake_c)
-                # we do not need real samples to update G
-
-                # to mix up the condition vector and break the direct correspondence between the real data and the condition vector that was sampled for the fake data
-                # real data is no longer paired with the same condition vector that the generator used to generate fake data
-
-
+                
+                #### not needed
+                # !we do not need real samples to update G
+                # !to mix up the condition vector and break the direct correspondence between the real data and the condition vector that was sampled for the fake data
+                # !real data is no longer paired with the same condition vector that the generator used to generate fake data
+                ####
 
                 ######### loss calculation
 
@@ -183,6 +187,7 @@ class Synthesizer:
 
                 # information loss
 
+                # to have paired real and fake data !!
                 perm = np.arange(self.batch_size) # get index for condition
                 np.random.shuffle(perm)
                 # sample from real data based on conditions for con vector
@@ -205,7 +210,7 @@ class Synthesizer:
                 
                 if case_name == "constr_cond" or case_name == "constr":
                     # penalty_constraint
-                    g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance)
+                    g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance, self.constr_loss_coef)
 
                     self.evaluation_model.loss_measure(g_loss_constr)
 
@@ -217,11 +222,11 @@ class Synthesizer:
                                 
             epoch += 1
         
-        print("Evaluation")
+        print("Model evaluation")
         ####### Evaluation
-        # self.evaluation_model.penalty_graph()
+        self.evaluation_model.evaluate_model()
     
-    def sample(self, n_rows):
+    def sample(self, n_rows): # sample data after training is finished. User defines how many rows
         
         self.generator.eval()
 
