@@ -2,7 +2,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-
+import time
+from sklearn import metrics
+import pandas as pd
 
 from blocks.data_prep import DataPrep
 from blocks.networks import Classifier, Discriminator, Generator, apply_activate, loss_generator, loss_constraint
@@ -13,14 +15,14 @@ from blocks.evaluation import Model_evaluation
 class Synthesizer:
     def __init__(self,
                  noise_dim=128, # dim of z - noise vector for G 
-                 generator_dim=[256, 256], # list of integers, size(s) of hidden layers
-                 discriminator_dim=[256, 256], # list of integers, size(s) of hidden layers
-                 classifier_dim = [256, 256], # (64), list of integers of hidden layers
+                 generator_dim=[256, 128, 256], # list of integers, size(s) of hidden layers
+                 discriminator_dim=[256, 128, 256], # list of integers, size(s) of hidden layers
+                 classifier_dim = [256, 256], # list of integers of hidden layers
                  constr_loss_coef = 100, # constraint loss coefficient
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=50,
-                 epochs=50,
+                 epochs=100,
                  steps_d = 1): # number of updates D for 1 update G
 
         self.noise_dim = noise_dim
@@ -34,7 +36,7 @@ class Synthesizer:
         self.constr_loss_coef = constr_loss_coef
         self.mode_threshold = mode_threshold
 
-    def fit(self, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
         if class_balance == None and condition_list == None:
             case_name = "actual"
@@ -57,6 +59,7 @@ class Synthesizer:
                     mixed_modes=mixed_modes)
         
         train_data = self.transformer.transform(raw_data)
+        steps_per_epoch = 10 # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
 
         data_dim = train_data.shape[1]
 
@@ -67,7 +70,7 @@ class Synthesizer:
         self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, case_name, cond_ratio, class_balance, condition_list)
 
         # initialize Evaluation class
-        self.evaluation_model = Model_evaluation()
+        self.evaluation_model = Model_evaluation(self.epochs, steps_per_epoch, self.steps_d, case_name, data_name)
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
@@ -80,13 +83,12 @@ class Synthesizer:
         # train C
         steps_per_epoch_c=50
         epochs_c=100
-        loss = []
+        
         for i in tqdm(range(epochs_c)):
             for id in range(steps_per_epoch_c):
                 real_pre, real_label = classifier(train_data)
 
                 loss_cc = classifier.loss_classification(real_pre, real_label)
-                loss.append(float(loss_cc))
 
                 optimizerC.zero_grad()
                 loss_cc.backward()
@@ -109,10 +111,22 @@ class Synthesizer:
         # train G and D
 
         epoch = 0
+
+        # for evaluation later
+        epoch_train_time = []
+        g_loss_orig_lst = []
+        g_loss_gen_lst = []
+        g_loss_info_lst = []
+        g_loss_class_lst = []
+        g_loss_constr_lst = []
+        d_loss_lst = []
+        g_loss_lst = []
+        d_auc_score = []
         
-        steps_per_epoch = max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
         torch.autograd.set_detect_anomaly(True)
+        
         for i in tqdm(range(self.epochs)):
+            time_start = time.perf_counter()
             for id_ in range(steps_per_epoch):
                 # update steps_d times D
                 for _ in range(self.steps_d):
@@ -150,6 +164,11 @@ class Synthesizer:
                     loss_d.backward()
                     optimizerD.step()
 
+                    d_loss_lst.append(float(loss_d))
+
+                    y_labels_true = np.concatenate([np.ones_like(y_real.detach().numpy()), np.zeros_like(y_fake.detach().numpy())])
+                    d_pred = np.concatenate([y_real.detach().numpy(), y_fake.detach().numpy()])
+                    d_auc_score.append(metrics.roc_auc_score(y_labels_true, d_pred))
                 
                 # update 1 time G
                 # regenerate data, as before
@@ -177,13 +196,14 @@ class Synthesizer:
 
                 ######### loss calculation
 
-                # generator loss
-                cross_entropy = loss_generator(fake, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, self.cond_vector.cat_col_dims, c, m)
-                
-                # original and # generator loss
-                g_orig_gen = -torch.mean(y_fake) + cross_entropy
+                # original loss
+                g_loss_orig = -torch.mean(y_fake)
 
-                g_orig_gen.backward(retain_graph=True)
+                # generator loss
+                g_loss_gen = loss_generator(fake, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, self.cond_vector.cat_col_dims, c, m)
+
+                g_loss_orig_gen = g_loss_orig + g_loss_gen
+                g_loss_orig_gen.backward(retain_graph=True)
 
                 # information loss
 
@@ -207,25 +227,46 @@ class Synthesizer:
                 
                 g_loss_class.backward(retain_graph=True)
                 optimizerG.step()
+
+                g_loss_orig_lst.append(float(g_loss_orig))
+                g_loss_gen_lst.append(float(g_loss_gen))
+                g_loss_info_lst.append(float(g_loss_info))
+                g_loss_class_lst.append(float(g_loss_class))
+
                 
                 if case_name == "constr_cond" or case_name == "constr":
                     # penalty_constraint
                     g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance, self.constr_loss_coef)
-
-                    self.evaluation_model.loss_measure(g_loss_constr)
 
                     # total_loss = g_orig_gen + g_loss_info + g_loss_class + g_loss_constr
 
                     optimizerG.zero_grad()
                     g_loss_constr.backward()
                     optimizerG.step()
-                                
+
+                    g_loss_constr_lst.append(float(g_loss_constr))
+                    g_loss_lst.append(float(g_loss_orig)+float(g_loss_gen)+float(g_loss_info)+float(g_loss_class)+float(g_loss_constr))
+                else:
+                    g_loss_lst.append(float(g_loss_orig)+float(g_loss_gen)+float(g_loss_info)+float(g_loss_class))
+
+            time_end = time.perf_counter()
+            epoch_train_time.append(time_end-time_start)
             epoch += 1
+
+
         
         print("Model evaluation")
         ####### Evaluation
-        self.evaluation_model.evaluate_model()
-    
+        
+
+        if case_name == "constr_cond" or case_name == "constr":
+            self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst)
+        else:
+            self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst)        
+        
+        self.avg_train_epoch_time = self.evaluation_model.calc_metrics(epoch_train_time, d_auc_score)
+
+
     def sample(self, n_rows): # sample data after training is finished. User defines how many rows
         
         self.generator.eval()
@@ -247,7 +288,26 @@ class Synthesizer:
 
         data = np.concatenate(data, axis=0)
 
-        result_data = self.transformer.inverse_transform(data[0:n_rows])
+        result_data = self.transformer.inverse_transform(data)
+        while len(result_data) < n_rows:
+            data = []
+            
+            for i in range(steps):
+                noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
+                c = self.cond_vector.sample(self.batch_size) # cond vector
+                c = torch.from_numpy(c)
+
+                noisez_c = torch.cat([noisez, c], dim=1) # concatinate noise with cond vector            
+                fake = self.generator(noisez_c) # get generated data
+                fake_act = apply_activate(fake, self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims) # transform
+                
+                data.append(fake_act.detach().numpy())
+
+            data = np.concatenate(data, axis=0)
+            tmp_result_data = self.transformer.inverse_transform(data)
+            result_data  = pd.concat([result_data, tmp_result_data], ignore_index=True)
+        result_data = result_data[0:n_rows]
+        result_data = result_data.reset_index(drop=True)
         return result_data
 
             

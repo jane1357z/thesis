@@ -25,6 +25,16 @@ class DataPrep:
             # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)} #one_hot_dict 
             self.categorical_labels[col] = np.array(raw_df[col].value_counts().index) # raw_df[col].unique() # categories for each class
         
+        max_min_dec = {}
+        for el in list(raw_df.columns):
+            if self.col_types[el] != "categorical":
+                dec_num_lst = list(raw_df[el].apply(lambda x: len(str(x).split(".")[1]) if "." in str(x) else 0)) # calc mode decimal places for each column
+                dec = max(set(dec_num_lst), key=dec_num_lst.count)
+                max_min_dec[el] = [raw_df[el].max(), raw_df[el].min(), dec]
+
+        self.max_min_dec = max_min_dec
+        self.df_dtypes = raw_df.dtypes.to_dict()
+        self.df_col_order = raw_df.columns
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
         self.vector_repres = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, transformed array
@@ -234,6 +244,7 @@ class DataPrep:
     
     def inverse_transform(self,generated_data):
         generated_data_arrays = []
+        indices_invalid = []
         generated_data = np.array(generated_data)
         for elem in self.transformed_col_dims:
             generated_data_arrays.append(generated_data[:, elem[0]:elem[0]+elem[1]])
@@ -247,6 +258,7 @@ class DataPrep:
                 min_v = self.gen_min_max["min"][elem]
                 max_v = self.gen_min_max["max"][elem]
                 u = u * (max_v - min_v) + min_v
+                u = np.round(u, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
                 df_inverse[elem] = u
             
             elif self.col_types[elem]=="continuous":
@@ -265,11 +277,9 @@ class DataPrep:
                 mean_t = means.reshape([-1])[p_argmax]
                 tmp = u * 4 * std_t + mean_t
 
-                # for idx, val in enumerate(tmp): # to find the problems
-                #     if (val < info["min"]) | (val > info['max']):
-                #         invalid_ids.append(idx)  # mark invalid data points
-
-                tmp = np.round(tmp)
+                # save indices, where values are more than max and less then min
+                indices_invalid.append(list(np.where((tmp > self.max_min_dec[elem][1]) | (tmp < self.max_min_dec[elem][0]))))
+                tmp = np.round(tmp, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
                 df_inverse[elem] = tmp
 
             elif self.col_types[elem]=="mixed":
@@ -290,10 +300,19 @@ class DataPrep:
                     else:
                         val = current[i][0] * 4 * std_t[i] + mean_t[i]
                         tmp.append(val)
-                tmp = np.round(tmp)
+                
+                # save indices, where values are more than max and less then min
+                indices_invalid.append(list(np.where((tmp < self.max_min_dec[elem][1]) | (tmp > self.max_min_dec[elem][0]))))
+                tmp = np.round(tmp, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
                 df_inverse[elem] = tmp
             elif self.col_types[elem]=="categorical":
                 labels = self.categorical_labels[elem]
                 idx = np.argmax(current, axis=1)
                 df_inverse[elem] = [labels[i] for i in idx]
-        return df_inverse
+
+        row_idx = np.unique(np.concatenate(indices_invalid))
+        df_inverse_valid = df_inverse.drop(row_idx)
+        df_inverse_valid = df_inverse_valid.reset_index(drop=True)
+        df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
+        df_inverse_valid = df_inverse_valid[self.df_col_order]
+        return df_inverse_valid

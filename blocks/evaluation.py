@@ -23,24 +23,75 @@ from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 class Model_evaluation(object):
-    def __init__(self):
-        self.penalties = []
+    def __init__(self, epochs, steps_per_epoch, steps_d, case_name, data_name):
+        self.epochs = epochs
+        self.steps_per_epoch = steps_per_epoch
+        self.steps_d = steps_d
+        self.case_name = case_name
+        self.data_name = data_name
 
-    def loss_measure(self, penalty):
-        penlaty_np = penalty.detach().numpy()
-        self.penalties.append(penlaty_np)
+    def losses_plot(self, d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst=None):
+        # plot each loss and save on pdf
+        d_loss_lst = np.array(d_loss_lst)
+        g_loss_lst = np.array(g_loss_lst)
+        g_loss_orig_lst = np.array(g_loss_orig_lst)
+        g_loss_gen_lst = np.array(g_loss_gen_lst)
+        g_loss_info_lst = np.array(g_loss_info_lst)
+        g_loss_class_lst = np.array(g_loss_class_lst)
+        
+        # get average per epoch
+        d_loss = np.mean(d_loss_lst.reshape(-1, self.steps_per_epoch*self.steps_d), axis=1)
+        g_loss = np.mean(g_loss_lst.reshape(-1, self.steps_per_epoch), axis=1)
+        g_loss_orig = np.mean(g_loss_orig_lst.reshape(-1, self.steps_per_epoch), axis=1)
+        g_loss_gen = np.mean(g_loss_gen_lst.reshape(-1, self.steps_per_epoch), axis=1)
+        g_loss_info = np.mean(g_loss_info_lst.reshape(-1, self.steps_per_epoch), axis=1)
+        g_loss_class = np.mean(g_loss_class_lst.reshape(-1, self.steps_per_epoch), axis=1)
+        
+        if g_loss_constr_lst != None: # depending on the case (with/without constr)
+            g_loss_constr_lst = np.array(g_loss_constr_lst)
+            g_loss_constr = np.mean(g_loss_constr_lst.reshape(-1, self.steps_per_epoch), axis=1)
+        
+            losses = [d_loss, g_loss, g_loss_orig, g_loss_gen, g_loss_info, g_loss_class, g_loss_constr]
+            names_losses = ["d_loss", "g_loss", "g_loss_orig", "g_loss_gen", "g_loss_info", "g_loss_class", "g_loss_constr"]
+            fig, axes = plt.subplots(2, 4, figsize=(19, 8))
+            fig.delaxes(axes[1, 3])
+        else:
+            losses = [d_loss, g_loss, g_loss_orig, g_loss_gen, g_loss_info, g_loss_class]
+            names_losses = ["d_loss", "g_loss","g_loss_orig", "g_loss_gen", "g_loss_info", "g_loss_class"]
+            fig, axes = plt.subplots(2, 3, figsize=(15, 8))
 
-    def penalty_graph(self):
-        plt.scatter(range(len(self.penalties)), self.penalties)
-        plt.show()
+        for i, ax in enumerate(axes.flat):  
+            if i < len(losses):
+                ax.plot(losses[i], ls='-')
+                ax.set_xlabel('Epoch')
+                ax.set_ylabel('Loss')
+                ax.set_title(names_losses[i])
+        fig.suptitle(f"{self.data_name}. Losses")
+        fig.subplots_adjust(hspace=0.3)
+        fig.savefig(f'results/{self.data_name}/model_eval/Losses_{self.case_name}.pdf', bbox_inches='tight')
+        plt.close()
 
-    def check_timers(self):
-        pass
-    def evaluate_model(self):
-        pass
+    def calc_metrics(self, time_epoch, d_auc_score):
+        avg_train_epoch_time = sum(time_epoch)/len(time_epoch)
+
+        d_auc_score = np.array(d_auc_score)
+        d_auc_score_epoch = np.mean(d_auc_score.reshape(-1, self.steps_per_epoch*self.steps_d), axis=1)
+
+        plt.figure(figsize=(6, 4))
+        plt.plot(range(0, self.epochs), d_auc_score_epoch, ls='-', label=f"{self.case_name}.Discriminator AUC Score", color='b')
+        plt.xlabel('epoch')
+        plt.ylabel('d_auc_score')
+        plt.savefig(f'results/{self.data_name}/model_eval/d_auc_score_{self.case_name}.pdf', bbox_inches='tight')
+        plt.close()
+
+        with open(f'results/{self.data_name}/model_eval/metrics.txt', "a") as f:
+            f.write(f"Avg train epoch time: {avg_train_epoch_time}\n")
+            f.write(f"d auc score last epoch: {d_auc_score_epoch[-1]}\n")
 
 class Data_evaluation(object):
-    def __init__(self, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+    def __init__(self, data_name, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+        self.data_name = data_name
+        
         self.real_data = real_data
         self.fake_data = fake_data
 
@@ -52,14 +103,20 @@ class Data_evaluation(object):
         self.target_col = target_col
 
         # cases: actual, constr, cond, constr_cond
+        # get real data based on constr or cond for comparison
         if class_balance == None and condition_list == None:
             case_name = "actual"
+            self.row_case = "Actual"
+            
         elif class_balance != None and condition_list == None:
             case_name = "constr"
-            self.real_data_constr = real_data
-            self.fake_data_constr = fake_data
+            key_cat = list(class_balance.keys())[0]
+            prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
+            self.real_data_constr = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict))
 
             self.class_balance = class_balance
+            
+            self.row_case = "Constraints"
 
         elif class_balance == None and condition_list != None:
             case_name = "cond"
@@ -90,13 +147,15 @@ class Data_evaluation(object):
 
             self.real_data_cond = real_data.iloc[indices, :].reset_index(drop=True) # get conditioned dataframe
 
-
+            self.row_case = "Conditions"
 
         elif class_balance != None and condition_list != None:
             case_name = "constr_cond"
             self.class_balance = class_balance
             self.condition_list = condition_list
             self.cond_ratio = cond_ratio
+
+            self.row_case = "Constr & Cond"
         
         self.case_name = case_name
 
@@ -328,9 +387,10 @@ class Data_evaluation(object):
 
                 plt.xticks(ticks=x, labels=non_target_cols, rotation=60)
                 plt.ylabel('Feature Importance')
-                plt.title('DT Feature Importance')
+                plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                plt.savefig("DT Feature Importance.png", dpi=300, bbox_inches='tight')
+                plt.savefig(f"results/{self.data_name}/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                plt.close()
 
                 return class_metrics_diff_dt, feature_importance_diff_class
             
@@ -340,7 +400,7 @@ class Data_evaluation(object):
                 fake_data_indep_init = fake.loc[:, non_target_cols]
                 real_data_indep_init = real.loc[:, non_target_cols].sample(len(fake))
 
-                cat_cols_mlp = self.cat_cols
+                cat_cols_mlp = self.cat_cols.copy()
                 non_cat_cols_mlp = self.non_cat_cols
                 if target_col in cat_cols_mlp:
                     cat_cols_mlp.remove(target_col)
@@ -398,9 +458,10 @@ class Data_evaluation(object):
 
                 plt.xticks(ticks=x, labels=non_target_cols, rotation=60)
                 plt.ylabel('Feature Importance')
-                plt.title('DT Feature Importance')
+                plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                plt.savefig("DT Feature Importance.png", dpi=300, bbox_inches='tight')
+                plt.savefig(f"results/{self.data_name}/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                plt.close()
 
                 return regr_metrics_diff_dt, feature_importance_diff_regr
             
@@ -412,7 +473,7 @@ class Data_evaluation(object):
                 real_data_indep_init = real.loc[:, non_target_cols].sample(len(fake))
                 real_data_dep = real[[target_col]].sample(len(fake)).values.ravel()
 
-                cat_cols_mlp = self.cat_cols
+                cat_cols_mlp = self.cat_cols.copy()
                 non_cat_cols_mlp = self.non_cat_cols
                 if target_col in cat_cols_mlp:
                     cat_cols_mlp.remove(target_col)
@@ -439,17 +500,6 @@ class Data_evaluation(object):
                 regr_metrics_diff_mlp = [abs(mape_fake-mape_real), abs(evs_fake-evs_real), abs(r2_score_fake-r2_score_real)]
                 return regr_metrics_diff_mlp
 
-    def calc_min_max(self, real, fake):
-        max_min = {}
-        for key, value in self.col_types.items():
-            if value != "categorical":
-                tmp = [fake[key].max()-real[key].max(), fake[key].min()-real[key].min()]
-                max_min[key] = tmp
-            else:
-                pass
-
-        return max_min
-
     def evaluation_metrics(self, real):
         fake = self.fake_data
         cat_real = real[self.cat_cols] # only categorical data columns
@@ -471,11 +521,13 @@ class Data_evaluation(object):
                 metrics_diff_dt, feature_importance_diff = self.ml_utility(real, fake, self.task, self.target_col, model_name)
             else:
                 metrics_diff_mlp = self.ml_utility(real, fake, self.task, self.target_col, model_name)
-        max_min = self.calc_min_max(real, fake)
 
-        # df for metrics
-        # return df
-        return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp
+
+        lst_metrics = [jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged]
+
+        lst_ml_utility = [metrics_diff_dt[0], metrics_diff_dt[1], metrics_diff_dt[2], metrics_diff_mlp[0], metrics_diff_mlp[1], metrics_diff_mlp[2]]
+
+        return lst_metrics, lst_ml_utility
 
     def check_constraints(self):
         fake = self.fake_data
@@ -516,17 +568,20 @@ class Data_evaluation(object):
     
 
     def evaluate_data(self):
+        # df_metrics_act, df_ml_utility_act = self.evaluation_metrics(self.real_data)
         # real data depends on the case, fake data is the same
-        jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp= self.evaluation_metrics(self.real_data)
+        
         if self.case_name == "actual":
-            pass
-            # jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp= self.evaluation_metrics(self.real_data)
+            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data)
+            add_diff = None
         elif self.case_name == "constr":
-            cat_balance_diff = self.check_constraints(self.real_data_constr)
-            jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp = self.evaluation_metrics(self.real_data_constr)
+            cat_balance_diff = self.check_constraints()
+            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr)
+            add_diff = cat_balance_diff
         elif self.case_name == "cond":
             cond_prob_diff= self.check_conditions()
-            jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff, log_cluster_merged, max_min, metrics_diff_dt, feature_importance_diff, metrics_diff_mlp = self.evaluation_metrics(self.real_data_cond)
+            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_cond)
+            add_diff = cond_prob_diff
         elif self.case_name == "constr_cond":
             pass
-        return jsd_average, wd_average, corr_coef_diff, theils_u_diff, corr_ratio_diff
+        return lst_metrics, lst_ml_utility, add_diff
