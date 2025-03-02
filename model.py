@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.optim as optim
+from torch.optim.lr_scheduler import ExponentialLR, StepLR
 from tqdm import tqdm
 import time
 from sklearn import metrics
@@ -15,15 +16,18 @@ from blocks.evaluation import Model_evaluation
 class Synthesizer:
     def __init__(self,
                  noise_dim=128, # dim of z - noise vector for G 
-                 generator_dim=[256, 128, 256], # list of integers, size(s) of hidden layers
-                 discriminator_dim=[256, 128, 256], # list of integers, size(s) of hidden layers
-                 classifier_dim = [256, 256], # list of integers of hidden layers
+                 generator_dim=[128, 128], # list of integers, size(s) of hidden layers
+                 discriminator_dim=[128, 128], # list of integers, size(s) of hidden layers
+                 classifier_dim = [128], # list of integers of hidden layers
                  constr_loss_coef = 100, # constraint loss coefficient
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
-                 batch_size=50,
-                 epochs=100,
-                 steps_d = 1): # number of updates D for 1 update G
+                 batch_size=100,
+                 epochs=300,
+                 steps_d = 10,
+                 steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
+                 steps_per_epoch_c=10,
+                 epochs_c=100): # number of updates D for 1 update G
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -35,6 +39,9 @@ class Synthesizer:
         self.steps_d = steps_d
         self.constr_loss_coef = constr_loss_coef
         self.mode_threshold = mode_threshold
+        self.steps_per_epoch = steps_per_epoch
+        self.steps_per_epoch_c = steps_per_epoch_c
+        self.epochs_c = epochs_c
 
     def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
@@ -59,7 +66,6 @@ class Synthesizer:
                     mixed_modes=mixed_modes)
         
         train_data = self.transformer.transform(raw_data)
-        steps_per_epoch = 10 # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
 
         data_dim = train_data.shape[1]
 
@@ -70,7 +76,7 @@ class Synthesizer:
         self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, case_name, cond_ratio, class_balance, condition_list)
 
         # initialize Evaluation class
-        self.evaluation_model = Model_evaluation(self.epochs, steps_per_epoch, self.steps_d, case_name, data_name)
+        self.evaluation_model = Model_evaluation(self.epochs, self.steps_per_epoch, self.steps_d, case_name, data_name)
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
@@ -81,11 +87,9 @@ class Synthesizer:
 
         print("train C")
         # train C
-        steps_per_epoch_c=50
-        epochs_c=100
         
-        for i in tqdm(range(epochs_c)):
-            for id in range(steps_per_epoch_c):
+        for i in tqdm(range(self.epochs_c)):
+            for id in range(self.steps_per_epoch_c):
                 real_pre, real_label = classifier(train_data)
 
                 loss_cc = classifier.loss_classification(real_pre, real_label)
@@ -99,13 +103,14 @@ class Synthesizer:
         self.generator = Generator(self.noise_dim + self.cond_vector.n_opt, self.generator_dim, train_data.shape[1])
         optimizer_params_G = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerG = optim.Adam(self.generator.parameters(), **optimizer_params_G)
-        
+        # schedulerG = ExponentialLR(optimizerG, gamma=0.98)
+        schedulerG = StepLR(optimizerG, step_size=10, gamma=0.8)
         # initialize D
 
         discriminator = Discriminator(data_dim + self.cond_vector.n_opt, self.discriminator_dim, pac=self.pac)
         optimizer_params_D = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerD = optim.Adam(discriminator.parameters(),**optimizer_params_D)
-
+        schedulerD = StepLR(optimizerD, step_size=10, gamma=0.8)
         print("train G and D")
 
         # train G and D
@@ -127,7 +132,7 @@ class Synthesizer:
         
         for i in tqdm(range(self.epochs)):
             time_start = time.perf_counter()
-            for id_ in range(steps_per_epoch):
+            for id_ in range(self.steps_per_epoch):
                 # update steps_d times D
                 for _ in range(self.steps_d):
                     noisez = torch.randn(self.batch_size, self.noise_dim) # generate noise for G
@@ -203,7 +208,7 @@ class Synthesizer:
                 g_loss_gen = loss_generator(fake, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, self.cond_vector.cat_col_dims, c, m)
 
                 g_loss_orig_gen = g_loss_orig + g_loss_gen
-                g_loss_orig_gen.backward(retain_graph=True)
+                # g_loss_orig_gen.backward(retain_graph=True)
 
                 # information loss
 
@@ -219,14 +224,14 @@ class Synthesizer:
                 loss_std = torch.norm(torch.std(fake_act, dim=0) - torch.std(real, dim=0), 2)
                 
                 g_loss_info = loss_mean + loss_std 
-                g_loss_info.backward(retain_graph=True)
+                # g_loss_info.backward(retain_graph=True)
 
                 # classification loss G
                 fake_pre, fake_label = classifier(fake_act)
                 g_loss_class = classifier.loss_classification(fake_pre, fake_label)
                 
-                g_loss_class.backward(retain_graph=True)
-                optimizerG.step()
+                # g_loss_class.backward(retain_graph=True)
+                # optimizerG.step()
 
                 g_loss_orig_lst.append(float(g_loss_orig))
                 g_loss_gen_lst.append(float(g_loss_gen))
@@ -238,26 +243,37 @@ class Synthesizer:
                     # penalty_constraint
                     g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance, self.constr_loss_coef)
 
-                    # total_loss = g_orig_gen + g_loss_info + g_loss_class + g_loss_constr
+                    # optimizerG.zero_grad()
+                    # g_loss_constr.backward(retain_graph=True)
+                    # optimizerG.step()
 
-                    optimizerG.zero_grad()
-                    g_loss_constr.backward()
+                    total_loss = g_loss_orig + g_loss_gen + g_loss_info + g_loss_class + g_loss_constr
+                    
+                    optimizerG.zero_grad(set_to_none=False)
+                    total_loss.backward(retain_graph=True)
                     optimizerG.step()
-
+                    
                     g_loss_constr_lst.append(float(g_loss_constr))
                     g_loss_lst.append(float(g_loss_orig)+float(g_loss_gen)+float(g_loss_info)+float(g_loss_class)+float(g_loss_constr))
                 else:
+                    total_loss = g_loss_orig + g_loss_gen + g_loss_info + g_loss_class
+                    
+                    optimizerG.zero_grad(set_to_none=False)
+                    total_loss.backward(retain_graph=True)
+                    optimizerG.step()
+
                     g_loss_lst.append(float(g_loss_orig)+float(g_loss_gen)+float(g_loss_info)+float(g_loss_class))
 
             time_end = time.perf_counter()
             epoch_train_time.append(time_end-time_start)
             epoch += 1
+            schedulerG.step()
+            schedulerD.step()
 
 
         
         print("Model evaluation")
         ####### Evaluation
-        
 
         if case_name == "constr_cond" or case_name == "constr":
             self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst)
@@ -289,6 +305,7 @@ class Synthesizer:
         data = np.concatenate(data, axis=0)
 
         result_data = self.transformer.inverse_transform(data)
+
         while len(result_data) < n_rows:
             data = []
             

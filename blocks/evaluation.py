@@ -365,10 +365,19 @@ class Data_evaluation(object):
 
         if task == "class":
             if model_name == "dt":
-                fake_data_indep = fake.loc[:, non_target_cols]
-                fake_data_dep = fake[[target_col]]
-                real_data_indep = real.loc[:, non_target_cols].sample(len(fake))
-                real_data_dep = real[[target_col]].sample(len(fake))
+                ## object/category data encoding
+                dt_fake = fake.copy()
+                dt_real = real.copy()
+
+                for el in self.cat_cols:
+                    if el in real.select_dtypes(include=['object', 'category']):
+                        dt_real[el] = real[el].astype('category').cat.codes.replace(-1, np.nan)
+                        dt_fake[el] = fake[el].astype('category').cat.codes.replace(-1, np.nan)
+
+                fake_data_indep = dt_fake.loc[:, non_target_cols]
+                fake_data_dep = dt_fake[[target_col]]
+                real_data_indep = dt_real.loc[:, non_target_cols].sample(len(fake))
+                real_data_dep = dt_real[[target_col]].sample(len(fake))
 
                 x_train_real, x_test_real, y_train_real, y_test_real = train_test_split(real_data_indep ,real_data_dep, test_size=0.2,random_state=42) 
                 x_train_fake, _ , y_train_fake, _ = train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
@@ -389,7 +398,7 @@ class Data_evaluation(object):
                 plt.ylabel('Feature Importance')
                 plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                plt.savefig(f"results/{self.data_name}/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
                 plt.close()
 
                 return class_metrics_diff_dt, feature_importance_diff_class
@@ -437,10 +446,19 @@ class Data_evaluation(object):
             
         elif task == "regr":
             if model_name == "dt":
-                fake_data_indep = fake.loc[:, non_target_cols]
-                fake_data_dep = fake[[target_col]]
-                real_data_indep = real.loc[:, non_target_cols].sample(len(fake))
-                real_data_dep = real[[target_col]].sample(len(fake))
+                ## object/category data encoding
+                dt_fake = fake.copy()
+                dt_real = real.copy()
+
+                for el in self.cat_cols:
+                    if el in real.select_dtypes(include=['object', 'category']):
+                        dt_real[el] = real[el].astype('category').cat.codes.replace(-1, np.nan)
+                        dt_fake[el] = fake[el].astype('category').cat.codes.replace(-1, np.nan)
+
+                fake_data_indep = dt_fake.loc[:, non_target_cols]
+                fake_data_dep = dt_fake[[target_col]]
+                real_data_indep = dt_real.loc[:, non_target_cols].sample(len(fake))
+                real_data_dep = dt_real[[target_col]].sample(len(fake))
 
                 x_train_real, x_test_real, y_train_real, y_test_real = train_test_split(real_data_indep,real_data_dep, test_size=0.2,random_state=42) 
                 x_train_fake, _ , y_train_fake, _ = train_test_split(fake_data_indep,fake_data_dep,test_size=0.2, random_state=42) 
@@ -460,7 +478,7 @@ class Data_evaluation(object):
                 plt.ylabel('Feature Importance')
                 plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                plt.savefig(f"results/{self.data_name}/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
                 plt.close()
 
                 return regr_metrics_diff_dt, feature_importance_diff_regr
