@@ -24,10 +24,16 @@ class Synthesizer:
                  pac=10, # number of samples in one pac
                  batch_size=100,
                  epochs=300,
-                 steps_d = 10,
+                 steps_d = 10,  # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
                  steps_per_epoch_c=10,
-                 epochs_c=100): # number of updates D for 1 update G
+                 epochs_c=100,
+                 step_size_g=10,
+                 gamma_g=0.8, 
+                 lr_g=2e-4,
+                 step_size_d=10,
+                 gamma_d=0.8, 
+                 lr_d=2e-4):
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -42,6 +48,12 @@ class Synthesizer:
         self.steps_per_epoch = steps_per_epoch
         self.steps_per_epoch_c = steps_per_epoch_c
         self.epochs_c = epochs_c
+        self.step_size_g = step_size_g
+        self.gamma_g = gamma_g
+        self.step_size_d = step_size_d
+        self.gamma_d = gamma_d
+        self.lr_g = lr_g
+        self.lr_d = lr_d
 
     def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
@@ -101,16 +113,16 @@ class Synthesizer:
 
         # initialize G
         self.generator = Generator(self.noise_dim + self.cond_vector.n_opt, self.generator_dim, train_data.shape[1])
-        optimizer_params_G = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
+        optimizer_params_G = dict(lr=self.lr_g, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerG = optim.Adam(self.generator.parameters(), **optimizer_params_G)
         # schedulerG = ExponentialLR(optimizerG, gamma=0.98)
-        schedulerG = StepLR(optimizerG, step_size=10, gamma=0.8)
+        schedulerG = StepLR(optimizerG, step_size=self.step_size_g, gamma=self.gamma_g)
         # initialize D
 
         discriminator = Discriminator(data_dim + self.cond_vector.n_opt, self.discriminator_dim, pac=self.pac)
-        optimizer_params_D = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
+        optimizer_params_D = dict(lr=self.lr_d, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerD = optim.Adam(discriminator.parameters(),**optimizer_params_D)
-        schedulerD = StepLR(optimizerD, step_size=10, gamma=0.8)
+        schedulerD = StepLR(optimizerD, step_size=self.step_size_d, gamma=self.gamma_d)
         print("train G and D")
 
         # train G and D

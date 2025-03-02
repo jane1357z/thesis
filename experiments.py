@@ -57,8 +57,6 @@ elif task == "regr":
 df_ml_utility = pd.DataFrame(columns=ml_columns, index=["Actual", "Constraints", "Conditions", "Constr & Cond"])
 df_ml_utility.index.name = f"ML utility\n{ml_task}"
 
-with open(f'results/{data_name}/model_eval/metrics.txt', "w") as f:
-    f.write(f"{cases[0]}:\n")
 
 ## experiments
 print(cases[0])
@@ -75,8 +73,6 @@ model.fit(data_name=data_name,
     target_col=target_col)
 
 synth_data = model.sample(1000)
-synth_data.to_csv(f"results/{data_name}/synth_data/actual.csv", sep=',', index=False)
-
 
 evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col)
 # # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
@@ -87,77 +83,80 @@ exp_time = time_end - time_start
 
 df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[0])
 
-with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
-    f.write(f"Experiment time: {exp_time/60} mins\n\n")
-    f.write(f"{cases[1]}:\n")
+
+del model
+categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+
+
+
+# with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
+#     f.write(f"Experiment time: {exp_time/60} mins\n\n")
+#     f.write(f"{cases[1]}:\n")
     
+    
+# print(cases[1])
+# time_start = time.perf_counter()
+# model = Synthesizer()
+# model.fit(data_name=data_name,
+#     raw_data=train_data,
+#     categorical_cols=categorical_cols,
+#     continuous_cols=continuous_cols,
+#     mixed_cols=mixed_cols,
+#     general_cols=general_cols,
+#     components_numbers=components_numbers,
+#     mixed_modes=mixed_modes,
+#     target_col=target_col,
+#     class_balance=class_balance)
 
-del model
-categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+# synth_data = model.sample(200)
+# synth_data.to_csv(f"results/{data_name}/synth_data/constr.csv", sep=',', index=False)
 
-print(cases[1])
-time_start = time.perf_counter()
-model = Synthesizer()
-model.fit(data_name=data_name,
-    raw_data=train_data,
-    categorical_cols=categorical_cols,
-    continuous_cols=continuous_cols,
-    mixed_cols=mixed_cols,
-    general_cols=general_cols,
-    components_numbers=components_numbers,
-    mixed_modes=mixed_modes,
-    target_col=target_col,
-    class_balance=class_balance)
+# evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=class_balance)
+# # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
+# lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
 
-synth_data = model.sample(200)
-synth_data.to_csv(f"results/{data_name}/synth_data/constr.csv", sep=',', index=False)
+# time_end = time.perf_counter()
+# exp_time = time_end - time_start
 
-evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=class_balance)
-# act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
-lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
+# df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[1])
 
-time_end = time.perf_counter()
-exp_time = time_end - time_start
+# with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
+#     f.write(f"Experiment time: {exp_time/60} mins\n\n")
+#     f.write("Cond:\n")
 
-df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[1])
+# del model
+# categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
 
-with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
-    f.write(f"Experiment time: {exp_time/60} mins\n\n")
-    f.write("Cond:\n")
+# print(cases[2])
+# time_start = time.perf_counter()
+# model = Synthesizer()
+# model.fit(data_name=data_name,
+#     raw_data=train_data,
+#     categorical_cols=categorical_cols,
+#     continuous_cols=continuous_cols,
+#     mixed_cols=mixed_cols,
+#     general_cols=general_cols,
+#     components_numbers=components_numbers,
+#     mixed_modes=mixed_modes,
+#     target_col=target_col,
+#     condition_list=condition_list,
+#     cond_ratio=cond_ratio)
 
-del model
-categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+# synth_data = model.sample(200)
+# synth_data.to_csv(f"results/{data_name}/synth_data/cond.csv", sep=',', index=False)
 
-print(cases[2])
-time_start = time.perf_counter()
-model = Synthesizer()
-model.fit(data_name=data_name,
-    raw_data=train_data,
-    categorical_cols=categorical_cols,
-    continuous_cols=continuous_cols,
-    mixed_cols=mixed_cols,
-    general_cols=general_cols,
-    components_numbers=components_numbers,
-    mixed_modes=mixed_modes,
-    target_col=target_col,
-    condition_list=condition_list,
-    cond_ratio=cond_ratio)
+# evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, condition_list=condition_list, cond_ratio=cond_ratio)
+# # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
+# lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
 
-synth_data = model.sample(200)
-synth_data.to_csv(f"results/{data_name}/synth_data/cond.csv", sep=',', index=False)
+# time_end = time.perf_counter()
+# exp_time = time_end - time_start
 
-evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, condition_list=condition_list, cond_ratio=cond_ratio)
-# act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
-lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
+# df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[2])
 
-time_end = time.perf_counter()
-exp_time = time_end - time_start
-
-df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[2])
-
-with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
-    f.write(f"Experiment time: {exp_time/60} mins\n\n")
-    f.write("Constr cond:\n")
+# with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
+#     f.write(f"Experiment time: {exp_time/60} mins\n\n")
+#     f.write("Constr cond:\n")
 
 # del model
 # categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
