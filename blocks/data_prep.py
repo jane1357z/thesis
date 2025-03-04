@@ -124,9 +124,105 @@ class DataPrep:
                 self.cols_mapping["continuous"].append([key, feature_transformed.shape[1]])
                 self.vector_repres["continuous"].append(feature_transformed.tolist())
 
-            elif value== "mixed":
+            # elif value== "mixed":
+            #     current = current.to_numpy()
+            #     current = current.astype(np.float64)
+            #     filter_cont = ~np.isin(current, self.mixed_modes[key]) # true for categorical part (modes)
+            #     n_components = self.components_numbers[key]
+
+            #     gm = BayesianGaussianMixture(
+            #         n_components = n_components, 
+            #         weight_concentration_prior=0.001,  
+            #         random_state=42)
+
+            #     gm.fit(current.reshape([-1, 1])) # Fits the model on all values
+            #     mode_freq = (pd.Series(gm.predict(current.reshape([-1, 1]))).value_counts().keys()) # mode frequency descending order
+
+            #     old_comp = gm.weights_ > self.mode_threshold # boolean array old_comp; modes with weights below this threshold are considered inactive or insignificant
+
+            #     signif_modes_bool = []
+
+            #     for i in range(n_components):
+            #         if (i in (mode_freq)) & old_comp[i]: # if both conditions are met (the mode is active and its weight is significant)
+            #             signif_modes_bool.append(True)
+            #         else:
+            #             signif_modes_bool.append(False)
+
+            #     self.models_cont_mixed["components"][key] = signif_modes_bool
+
+            #     # transform
+            #     means = gm.means_.reshape([-1])
+            #     stds = np.sqrt(gm.covariances_).reshape([-1])
+            #     self.models_cont_mixed["means"][key] = means
+            #     self.models_cont_mixed["stds"][key] = stds
+
+            #     zero_std_list = [] # index of mean for modes
+
+            #     for i in range(len(self.mixed_modes[key])): # define the mode to mean index
+            #         mode = self.mixed_modes[key][i]
+            #         dist = []
+            #         for idx, val in enumerate(list(means.flatten())):
+            #             dist.append(abs(mode - val))
+            #         index_min = np.argmin(np.array(dist))
+            #         self.mixed_modes[key][i] = [index_min, mode] # mode index and mode value
+            #         zero_std_list.append(index_min)
+
+            #     current = current.reshape([-1, 1])
+            #     current_cont = current[filter_cont] # get only continuous values
+            #     probs = gm.predict_proba(current_cont.reshape([-1, 1])) # predicts the probability of current value belonging to each cluster
+            #     probs = probs[:, signif_modes_bool] # only significant modes
+            #     n_opts = sum(signif_modes_bool) # number of significant modes
+
+            #     opt_sel = np.zeros(len(current_cont), dtype='int')
+            #     for i in range(len(current_cont)):
+            #         pp = probs[i] + 1e-6
+            #         pp = pp / sum(pp)
+
+            #         opt_sel[i] = np.random.choice(np.arange(n_opts), p=pp) # sample from probability to choose cluster
+
+            #     idx = np.arange((len(current_cont)))
+            #     features = np.empty(shape=(len(current_cont.reshape([-1, 1])), n_components))
+            #     features = np.abs(current_cont.reshape([-1, 1]) - means) / (4 * stds) # calculate alphas
+            #     features = features[:, signif_modes_bool]
+            #     features = features[idx, opt_sel].reshape([-1, 1])
+            #     features = np.clip(features, -.99, .99)
+            #     mean_probs_onehot = np.zeros_like(probs)
+            #     mean_probs_onehot[np.arange(len(probs)), opt_sel] = 1 # one-hot encoding of cluster
+
+            #     feature_transformed = np.zeros([len(current), 1+mean_probs_onehot.shape[1]])
+            #     col_modes = {pair[1]: pair[0] for pair in self.mixed_modes[key]} # get dict from mixed_modes[key] list to find category index
+            #     features_list_counter = 0
+            #     for idx, val in enumerate(current): # transform each value separately
+            #         if val.item() in col_modes.keys():
+            #             category_index = col_modes.get(val.item())
+            #             feature_transformed[idx, 0] = 0 # alpha for categorical part is 0
+            #             feature_transformed[idx, (zero_std_list[category_index]+1)] = 1    
+            #         else:
+            #             feature_transformed[idx, 0] = features[features_list_counter] # alpha 
+            #             feature_transformed[idx, 1:] = mean_probs_onehot[features_list_counter]
+            #             features_list_counter = features_list_counter + 1
+
+            #     self.cols_mapping["mixed"].append([key, feature_transformed.shape[1]])
+            #     self.vector_repres["mixed"].append(feature_transformed.tolist())
+            
+            elif value == "mixed":
+
                 current = current.to_numpy()
+                current = current.astype(np.float64)
                 filter_cont = ~np.isin(current, self.mixed_modes[key]) # true for categorical part (modes)
+                
+                ## log-transformation
+                eps_log = 1e-6  # to avoid log(0)
+                col_lim = self.max_min_dec[key][1] # get min of col
+
+                if col_lim > 0:
+                    current[filter_cont] = np.log(current[filter_cont])   # no need to shift
+                else:
+                    current[filter_cont] = np.log(current[filter_cont] -col_lim + eps_log)  # shift before log
+
+
+                ## VGM
+
                 n_components = self.components_numbers[key]
 
                 gm = BayesianGaussianMixture(
@@ -168,6 +264,8 @@ class DataPrep:
 
                 current = current.reshape([-1, 1])
                 current_cont = current[filter_cont] # get only continuous values
+
+                
                 probs = gm.predict_proba(current_cont.reshape([-1, 1])) # predicts the probability of current value belonging to each cluster
                 probs = probs[:, signif_modes_bool] # only significant modes
                 n_opts = sum(signif_modes_bool) # number of significant modes
@@ -203,7 +301,7 @@ class DataPrep:
 
                 self.cols_mapping["mixed"].append([key, feature_transformed.shape[1]])
                 self.vector_repres["mixed"].append(feature_transformed.tolist())
-        
+            
         # combine together all types
         transformed_data_arrays = [] # transformed data
         transformed_col_names = [] # track columns names
@@ -294,6 +392,10 @@ class DataPrep:
                 std_t = stds.reshape([-1])[p_argmax]
                 mean_t = means.reshape([-1])[p_argmax]
 
+                
+                col_lim = self.max_min_dec[elem][1]
+                eps_log = 1e-6
+
                 tmp = []
                 for i in range(len(current)):
                     if current[i][0]==0:
@@ -302,7 +404,14 @@ class DataPrep:
                         tmp.append(val) # get the mode from dict
                     else:
                         val = current[i][0] * 4 * std_t[i] + mean_t[i]
+                        if col_lim > 0:
+                            val = np.exp(val)
+                        else:
+                            val = np.exp(val) + col_lim - eps_log
                         tmp.append(val)
+
+
+                
                 
                 # save indices, where values are more than max and less then min
                 indices_invalid.append(list(np.where((tmp < self.max_min_dec[elem][1]) | (tmp > self.max_min_dec[elem][0]))))

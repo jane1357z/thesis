@@ -16,14 +16,14 @@ from blocks.evaluation import Model_evaluation
 class Synthesizer:
     def __init__(self,
                  noise_dim=128, # dim of z - noise vector for G 
-                 generator_dim=[128, 128], # list of integers, size(s) of hidden layers
-                 discriminator_dim=[128, 128], # list of integers, size(s) of hidden layers
+                 generator_dim=[128], # list of integers, size(s) of hidden layers
+                 discriminator_dim=[128], # list of integers, size(s) of hidden layers
                  classifier_dim = [128], # list of integers of hidden layers
                  constr_loss_coef = 100, # constraint loss coefficient
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=100,
-                 epochs=100,
+                 epochs=2000,
                  steps_d = 10, # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
                  steps_per_epoch_c=10,
@@ -103,14 +103,13 @@ class Synthesizer:
         self.generator = Generator(self.noise_dim + self.cond_vector.n_opt, self.generator_dim, train_data.shape[1])
         optimizer_params_G = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerG = optim.Adam(self.generator.parameters(), **optimizer_params_G)
-        # schedulerG = ExponentialLR(optimizerG, gamma=0.98)
-        schedulerG = StepLR(optimizerG, step_size=10, gamma=0.8)
+
         # initialize D
 
         discriminator = Discriminator(data_dim + self.cond_vector.n_opt, self.discriminator_dim, pac=self.pac)
         optimizer_params_D = dict(lr=2e-4, betas=(0.5, 0.9), weight_decay=1e-6)
         optimizerD = optim.Adam(discriminator.parameters(),**optimizer_params_D)
-        schedulerD = StepLR(optimizerD, step_size=10, gamma=0.8)
+
         print("train G and D")
 
         # train G and D
@@ -267,8 +266,6 @@ class Synthesizer:
             time_end = time.perf_counter()
             epoch_train_time.append(time_end-time_start)
             epoch += 1
-            schedulerG.step()
-            schedulerD.step()
 
 
         

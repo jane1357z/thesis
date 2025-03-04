@@ -13,27 +13,27 @@ def experiments():
     pass
 
 def reset_user_info():
-    categorical_cols = ['sex', 'children', 'smoker', 'region']
-    general_cols = ['age', 'bmi', 'charges']
+    categorical_cols = ['Family', 'Education', 'Personal Loan', 'Securities Account', 'CD Account', 'Online', 'CreditCard']
+    general_cols = ['Age', 'Experience', 'CCAvg', 'Income', 'ZIP Code']
     continuous_cols = []
-    mixed_cols = []
-    components_numbers = {}
-    mixed_modes = {}
+    mixed_cols = ['Mortgage']
+    components_numbers = {"Mortgage": 2}
+    mixed_modes = {"Mortgage": [0]}
 
-    class_balance = {"smoker": [0.5,0.5]} # constraint
-    condition_list = [{"col1":"smoker", "cat1": "no", "col2": "children", "cat2": 0}]
-    cond_ratio = 0.5
+    class_balance = {"CreditCard": [0.6,0.4]} # constraint
+    condition_list = [{"col1":"Family", "cat1": 2, "col2": "Education", "cat2":2}]
+    cond_ratio = 0.15
 
-    target_col = "charges"
-    data_name = "insurance"
-    task = "regr" # "regr" "class"
+    target_col = "Personal Loan"
+    data_name = "loan"
+    task = "class" # "regr" "class"
     return categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task
 
-df_insurance = pd.read_csv("data\\insurance.csv")
+df_loan = pd.read_excel("data\\Bank_Personal_Loan_Modelling.xlsx",sheet_name=1)
+df_loan = df_loan.drop("ID", axis=1)
+df_loan.reset_index(drop=True, inplace=True)  # !!!
 
-df_insurance.reset_index(drop=True, inplace=True)  # !!!
-
-train_data = df_insurance.copy()
+train_data = df_loan.copy()
 
 def add_to_df(lst_metrics, lst_ml_utility, row_case):
     df_metrics.loc[row_case] = lst_metrics
@@ -93,76 +93,76 @@ with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
     f.write(f"{cases[1]}:\n")
     
 
-del model
-del evaluation_data
-categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
-train_data = df_insurance.copy()
+# del model
+# del evaluation_data
+# categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+# train_data = df_loan.copy()
 
-print(cases[1])
-time_start = time.perf_counter()
-model = Synthesizer()
-model.fit(data_name=data_name,
-    raw_data=train_data,
-    categorical_cols=categorical_cols,
-    continuous_cols=continuous_cols,
-    mixed_cols=mixed_cols,
-    general_cols=general_cols,
-    components_numbers=components_numbers,
-    mixed_modes=mixed_modes,
-    target_col=target_col,
-    class_balance=class_balance)
+# print(cases[1])
+# time_start = time.perf_counter()
+# model = Synthesizer()
+# model.fit(data_name=data_name,
+#     raw_data=train_data,
+#     categorical_cols=categorical_cols,
+#     continuous_cols=continuous_cols,
+#     mixed_cols=mixed_cols,
+#     general_cols=general_cols,
+#     components_numbers=components_numbers,
+#     mixed_modes=mixed_modes,
+#     target_col=target_col,
+#     class_balance=class_balance)
 
-synth_data = model.sample(200)
-synth_data.to_csv(f"results/{data_name}/synth_data/constr.csv", sep=',', index=False)
+# synth_data = model.sample(200)
+# synth_data.to_csv(f"results/{data_name}/synth_data/constr.csv", sep=',', index=False)
 
-evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=class_balance)
-# act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
-lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
+# evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=class_balance)
+# # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
+# lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
 
-time_end = time.perf_counter()
-exp_time = time_end - time_start
+# time_end = time.perf_counter()
+# exp_time = time_end - time_start
 
-df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[1])
+# df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[1])
 
-with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
-    f.write(f"Experiment time: {exp_time/60} mins\n\n")
-    f.write("Cond:\n")
+# with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
+#     f.write(f"Experiment time: {exp_time/60} mins\n\n")
+#     f.write("Cond:\n")
 
-del model
-del evaluation_data
-categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
-train_data = df_insurance.copy()
+# del model
+# del evaluation_data
+# categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+# train_data = df_loan.copy()
 
-print(cases[2])
-time_start = time.perf_counter()
-model = Synthesizer()
-model.fit(data_name=data_name,
-    raw_data=train_data,
-    categorical_cols=categorical_cols,
-    continuous_cols=continuous_cols,
-    mixed_cols=mixed_cols,
-    general_cols=general_cols,
-    components_numbers=components_numbers,
-    mixed_modes=mixed_modes,
-    target_col=target_col,
-    condition_list=condition_list,
-    cond_ratio=cond_ratio)
+# print(cases[2])
+# time_start = time.perf_counter()
+# model = Synthesizer()
+# model.fit(data_name=data_name,
+#     raw_data=train_data,
+#     categorical_cols=categorical_cols,
+#     continuous_cols=continuous_cols,
+#     mixed_cols=mixed_cols,
+#     general_cols=general_cols,
+#     components_numbers=components_numbers,
+#     mixed_modes=mixed_modes,
+#     target_col=target_col,
+#     condition_list=condition_list,
+#     cond_ratio=cond_ratio)
 
-synth_data = model.sample(200)
-synth_data.to_csv(f"results/{data_name}/synth_data/cond.csv", sep=',', index=False)
+# synth_data = model.sample(200)
+# synth_data.to_csv(f"results/{data_name}/synth_data/cond.csv", sep=',', index=False)
 
-evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, condition_list=condition_list, cond_ratio=cond_ratio)
-# act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
-lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
+# evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, condition_list=condition_list, cond_ratio=cond_ratio)
+# # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
+# lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
 
-time_end = time.perf_counter()
-exp_time = time_end - time_start
+# time_end = time.perf_counter()
+# exp_time = time_end - time_start
 
-df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[2])
+# df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[2])
 
-with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
-    f.write(f"Experiment time: {exp_time/60} mins\n\n")
-    f.write("Constr cond:\n")
+# with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
+#     f.write(f"Experiment time: {exp_time/60} mins\n\n")
+#     f.write("Constr cond:\n")
 
 # del model
 # del evaluation_data
