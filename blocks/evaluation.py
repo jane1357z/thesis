@@ -179,6 +179,8 @@ class Data_evaluation(object):
             fake_pdf = dict(cat_fake[col].value_counts()/cat_fake[col].value_counts().sum())
             for key in real_pdf: # can be error, if prob=0 => no element
                 fake_pdf.setdefault(key, 0)
+            for key in fake_pdf: # can be error, if prob=0 => no element
+                real_pdf.setdefault(key, 0)
             real_pdf_sorted = [v for k, v in sorted(real_pdf.items())]
             fake_pdf_sorted = [v for k, v in sorted(fake_pdf.items())] 
             jsd_score = distance.jensenshannon(real_pdf_sorted, fake_pdf_sorted,base=2)
@@ -252,6 +254,12 @@ class Data_evaluation(object):
         return corr_ratio_diff
 
     def perform_clustering(self, real, fake):
+        ## object/category data encoding
+        for el in self.cat_cols:
+            if el in real.select_dtypes(include=['object', 'category']):
+                real[el] = real[el].astype('category').cat.codes.replace(-1, np.nan)
+                fake[el] = fake[el].astype('category').cat.codes.replace(-1, np.nan)
+
         sil_scores = []
         for k in range(2, 7):
             kmeans = KMeans(init = "random", n_clusters = k)

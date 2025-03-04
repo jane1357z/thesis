@@ -60,9 +60,12 @@ class DataPrep:
                 self.vector_repres["general"].append(feature_transformed.tolist())
 
             elif value == "categorical":
+                tmp_df = pd.DataFrame()
+                tmp_df[key] = pd.Categorical(current, categories=self.categorical_labels[key], ordered=True)
                 encoder=ce.OneHotEncoder(cols=key,handle_unknown='return_nan',return_df=True,use_cat_names=True)
 
-                feature_transformed = encoder.fit_transform(current)
+                feature_transformed = encoder.fit_transform(tmp_df)
+
                 feature_transformed = feature_transformed.to_numpy()
 
                 self.cols_mapping["categorical"].append([key, feature_transformed.shape[1]])
@@ -310,9 +313,15 @@ class DataPrep:
                 idx = np.argmax(current, axis=1)
                 df_inverse[elem] = [labels[i] for i in idx]
 
-        row_idx = np.unique(np.concatenate(indices_invalid))
-        df_inverse_valid = df_inverse.drop(row_idx)
-        df_inverse_valid = df_inverse_valid.reset_index(drop=True)
-        df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
-        df_inverse_valid = df_inverse_valid[self.df_col_order]
-        return df_inverse_valid
+        if indices_invalid:
+            row_idx = np.unique(np.concatenate(indices_invalid))
+            df_inverse_valid = df_inverse.drop(row_idx)
+            df_inverse_valid = df_inverse_valid.reset_index(drop=True)
+            df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
+            df_inverse_valid = df_inverse_valid[self.df_col_order]
+            return df_inverse_valid
+        else:
+            df_inverse_valid = df_inverse.reset_index(drop=True)
+            df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
+            df_inverse_valid = df_inverse_valid[self.df_col_order]
+            return df_inverse_valid            

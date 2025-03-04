@@ -13,26 +13,27 @@ def experiments():
     pass
 
 def reset_user_info():
-    categorical_cols = ['Family', 'Education', 'Personal Loan', 'Securities Account', 'CD Account', 'Online', 'CreditCard']
-    general_cols = ["Age", "Experience", "CCAvg", "Income", "ZIP Code"]
+    categorical_cols = ['sex', 'children', 'smoker', 'region']
+    general_cols = ['age', 'bmi', 'charges']
     continuous_cols = []
-    mixed_cols = ["Mortgage"]
-    components_numbers = {"Mortgage": 2}
-    mixed_modes = {"Mortgage": [0]}
+    mixed_cols = []
+    components_numbers = {}
+    mixed_modes = {}
 
+    class_balance = {"smoker": [0.5,0.5]} # constraint
+    condition_list = [{"col1":"smoker", "cat1": "no", "col2": "children", "cat2": 0}]
+    cond_ratio = 0.5
 
-    class_balance = {"CreditCard": [0.6,0.4]} # constraint
-    condition_list = [{"col1":"Family", "cat1": 2, "col2": "Education", "cat2":2}]
-    cond_ratio = 0.15
-
-    target_col = 'Personal Loan'
-    data_name = "loan"
-    task = "class" # "regr"
+    target_col = "charges"
+    data_name = "insurance"
+    task = "regr" # "regr" "class"
     return categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task
 
-df_loan = pd.read_excel("data\\Bank_Personal_Loan_Modelling.xlsx",sheet_name=1)
-df_loan = df_loan.drop("ID", axis=1)
-train_data = df_loan.reset_index(drop=True)  # !!!
+df_insurance = pd.read_csv("data\\insurance.csv")
+
+df_insurance.reset_index(drop=True, inplace=True)  # !!!
+
+train_data = df_insurance.copy()
 
 def add_to_df(lst_metrics, lst_ml_utility, row_case):
     df_metrics.loc[row_case] = lst_metrics
@@ -93,7 +94,9 @@ with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
     
 
 del model
+del evaluation_data
 categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+train_data = df_insurance.copy()
 
 print(cases[1])
 time_start = time.perf_counter()
@@ -126,7 +129,9 @@ with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
     f.write("Cond:\n")
 
 del model
+del evaluation_data
 categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+train_data = df_insurance.copy()
 
 print(cases[2])
 time_start = time.perf_counter()
@@ -160,7 +165,9 @@ with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
     f.write("Constr cond:\n")
 
 # del model
+# del evaluation_data
 # categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+# train_data = df_insurance.copy()
 
 # print(cases[3])
 # time_start = time.perf_counter()

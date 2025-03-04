@@ -23,11 +23,11 @@ class Synthesizer:
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=100,
-                 epochs=300,
-                 steps_d = 10,
+                 epochs=100,
+                 steps_d = 10, # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
                  steps_per_epoch_c=10,
-                 epochs_c=100): # number of updates D for 1 update G
+                 epochs_c=100):
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
