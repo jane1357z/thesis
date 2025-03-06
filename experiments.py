@@ -58,34 +58,66 @@ df_ml_utility = pd.DataFrame(columns=ml_columns, index=["Actual", "Constraints",
 df_ml_utility.index.name = f"ML utility\n{ml_task}"
 
 
+
+def model_test(df_metrics, df_ml_utility, epochs, step_size_g, gamma_g, lr_g, step_size_d, gamma_d, lr_d, i_exp):
+    categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+    model = Synthesizer(epochs=epochs,
+                    step_size_g=step_size_g,
+                    gamma_g=gamma_g, 
+                    lr_g=lr_g,
+                    step_size_d=step_size_d,
+                    gamma_d=gamma_d, 
+                    lr_d=lr_d,
+                    i_exp=i_exp)
+    model.fit(data_name=data_name,
+        raw_data=train_data,
+        categorical_cols=categorical_cols,
+        continuous_cols=continuous_cols,
+        mixed_cols=mixed_cols,
+        general_cols=general_cols,
+        components_numbers=components_numbers,
+        mixed_modes=mixed_modes,
+        target_col=target_col)
+
+    synth_data = model.sample(1000)
+
+    evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col)
+    # # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
+    lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
+
+    df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[0])
+
+
+    del model
+    return df_metrics, df_ml_utility
+
 ## experiments
-print(cases[0])
-time_start = time.perf_counter()
-model = Synthesizer()
-model.fit(data_name=data_name,
-    raw_data=train_data,
-    categorical_cols=categorical_cols,
-    continuous_cols=continuous_cols,
-    mixed_cols=mixed_cols,
-    general_cols=general_cols,
-    components_numbers=components_numbers,
-    mixed_modes=mixed_modes,
-    target_col=target_col)
+# gamma_d_lst = [0.4,0.5,0.6,0.7,0.8,0.9]
+# step_size_g_lst = [20,30,40,50]
+lr_g_lst = [5e-3, 2e-3, 2e-4, 2e-5]
+for i in range(len(lr_g_lst)):
+    print(i)
+    step_size_g=100
+    gamma_g=0.8
+    lr_g=lr_g_lst[i]
+    lr_d=2e-4
+    step_size_d=10
+    gamma_d=0.8
+    i_exp=i
+    epochs=500
+    df_metrics, df_ml_utility= model_test(df_metrics, df_ml_utility, epochs, step_size_g, gamma_g, lr_g, step_size_d, gamma_d, lr_d, i_exp)
 
-synth_data = model.sample(1000)
+    df_metrics = df_metrics.replace(pd.NA, np.nan).round(3)
+    df_ml_utility = df_ml_utility.replace(pd.NA, np.nan).round(3)
 
-evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col)
-# # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
-lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
-
-time_end = time.perf_counter()
-exp_time = time_end - time_start
-
-df_metrics, df_ml_utility = add_to_df(lst_metrics, lst_ml_utility, cases[0])
-
-
-del model
-categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+    if i_exp==0:
+        with pd.ExcelWriter("results/evaluation.xlsx", engine="openpyxl", mode="w") as writer: # for the 1st time, creates file
+            df_metrics.to_excel(writer, sheet_name=f"{i_exp}", startrow=0, startcol=0)
+            df_ml_utility.to_excel(writer, sheet_name=f"{i_exp}", startrow=6, startcol=0)
+    else:
+        with pd.ExcelWriter("results/evaluation.xlsx", engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer: # adds sheets in existing file
+            df_metrics.to_excel(writer, sheet_name=f"{i_exp}", startrow=0, startcol=0)
+            df_ml_utility.to_excel(writer, sheet_name=f"{i_exp}", startrow=6, startcol=0)
 
 
 
@@ -193,12 +225,6 @@ categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers,
 # with open(f'results/{data_name}/model_eval/metrics.txt', "a") as f:
 #     f.write(f"Experiment time: {exp_time/60} mins \n\n")
 
-df_metrics = df_metrics.replace(pd.NA, np.nan).round(3)
-df_ml_utility = df_ml_utility.replace(pd.NA, np.nan).round(3)
-
-with pd.ExcelWriter("results/evaluation.xlsx", engine="openpyxl", mode="w") as writer: # for the 1st time, creates file
-    df_metrics.to_excel(writer, sheet_name=f"{data_name}", startrow=0, startcol=0)
-    df_ml_utility.to_excel(writer, sheet_name=f"{data_name}", startrow=6, startcol=0)
 
 
 
@@ -206,10 +232,6 @@ with pd.ExcelWriter("results/evaluation.xlsx", engine="openpyxl", mode="w") as w
 
 
 
-
-# with pd.ExcelWriter("check_loop.xlsx", engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer: # adds sheets in existing file
-#     df_metrics.to_excel(writer, sheet_name=f"{data_name}", startrow=0, startcol=0)
-#     df_ml_utility.to_excel(writer, sheet_name=f"{data_name}", startrow=6, startcol=0)
 
 
 

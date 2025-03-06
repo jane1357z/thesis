@@ -33,7 +33,8 @@ class Synthesizer:
                  lr_g=2e-4,
                  step_size_d=10,
                  gamma_d=0.8, 
-                 lr_d=2e-4):
+                 lr_d=2e-4,
+                 i_exp=1):
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -54,6 +55,7 @@ class Synthesizer:
         self.gamma_d = gamma_d
         self.lr_g = lr_g
         self.lr_d = lr_d
+        self.i_exp = i_exp
 
     def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
@@ -88,7 +90,7 @@ class Synthesizer:
         self.cond_vector = Cond_vector(train_data,self.transformer.col_types, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, case_name, cond_ratio, class_balance, condition_list)
 
         # initialize Evaluation class
-        self.evaluation_model = Model_evaluation(self.epochs, self.steps_per_epoch, self.steps_d, case_name, data_name)
+        self.evaluation_model = Model_evaluation(self.epochs, self.steps_per_epoch, self.steps_d, case_name, data_name, self.step_size_g, self.gamma_g, self.lr_g, self.step_size_d, self.gamma_d, self.lr_d, self.i_exp)
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()

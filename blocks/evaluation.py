@@ -23,12 +23,20 @@ from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 class Model_evaluation(object):
-    def __init__(self, epochs, steps_per_epoch, steps_d, case_name, data_name):
+    def __init__(self, epochs, steps_per_epoch, steps_d, case_name, data_name,step_size_g, gamma_g, lr_g, step_size_d, gamma_d, lr_d, i_exp):
         self.epochs = epochs
         self.steps_per_epoch = steps_per_epoch
         self.steps_d = steps_d
         self.case_name = case_name
         self.data_name = data_name
+        
+        self.step_size_g = step_size_g
+        self.gamma_g = gamma_g
+        self.step_size_d = step_size_d
+        self.gamma_d = gamma_d
+        self.lr_g = lr_g
+        self.lr_d = lr_d
+        self.i_exp = i_exp
 
     def losses_plot(self, d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst=None):
         # plot each loss and save on pdf
@@ -66,9 +74,9 @@ class Model_evaluation(object):
                 ax.set_xlabel('Epoch')
                 ax.set_ylabel('Loss')
                 ax.set_title(names_losses[i])
-        fig.suptitle(f"{self.data_name}. Losses")
+        fig.suptitle(f"Losses lr_g={self.lr_g}, gamma_g={self.gamma_g}, step_size_g={self.step_size_g}, lr_d={self.lr_d}, gamma_d={self.gamma_d}, step_size_d={self.step_size_d}")
         fig.subplots_adjust(hspace=0.3)
-        fig.savefig(f'results/{self.data_name}/model_eval/Losses_{self.case_name}.pdf', bbox_inches='tight')
+        fig.savefig(f'results/Losses_{self.i_exp}.pdf', bbox_inches='tight')
         plt.close()
 
     def calc_metrics(self, time_epoch, d_auc_score):
@@ -81,12 +89,12 @@ class Model_evaluation(object):
         plt.plot(range(0, self.epochs), d_auc_score_epoch, ls='-', label=f"{self.case_name}.Discriminator AUC Score", color='b')
         plt.xlabel('epoch')
         plt.ylabel('d_auc_score')
-        plt.savefig(f'results/{self.data_name}/model_eval/d_auc_score_{self.case_name}.pdf', bbox_inches='tight')
+        # plt.savefig(f'results/{self.data_name}/model_eval/d_auc_score_{self.case_name}.pdf', bbox_inches='tight')
         plt.close()
 
-        with open(f'results/{self.data_name}/model_eval/metrics.txt', "a") as f:
-            f.write(f"Avg train epoch time: {avg_train_epoch_time}\n")
-            f.write(f"d auc score last epoch: {d_auc_score_epoch[-1]}\n")
+        # with open(f'results/{self.data_name}/model_eval/metrics.txt', "a") as f:
+        #     f.write(f"Avg train epoch time: {avg_train_epoch_time}\n")
+        #     f.write(f"d auc score last epoch: {d_auc_score_epoch[-1]}\n")
 
 class Data_evaluation(object):
     def __init__(self, data_name, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=None, condition_list=None, cond_ratio = None):
@@ -398,7 +406,7 @@ class Data_evaluation(object):
                 plt.ylabel('Feature Importance')
                 plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                # plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
                 plt.close()
 
                 return class_metrics_diff_dt, feature_importance_diff_class
@@ -478,7 +486,7 @@ class Data_evaluation(object):
                 plt.ylabel('Feature Importance')
                 plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                # plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
                 plt.close()
 
                 return regr_metrics_diff_dt, feature_importance_diff_regr
