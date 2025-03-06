@@ -5,13 +5,14 @@ from sklearn.mixture import BayesianGaussianMixture
 
 
 class DataPrep:
-    def __init__(self, raw_df: pd.DataFrame, categorical_cols: list, continuous_cols: list, mixed_cols: list, general_cols: list, components_numbers: dict, mode_threshold: float, mixed_modes: dict):
+    def __init__(self, raw_df: pd.DataFrame, categorical_cols: list, continuous_cols: list, mixed_cols: list, general_cols: list, log_transf: list, components_numbers: dict, mode_threshold: float, mixed_modes: dict):
         self.components_numbers = components_numbers
         self.mixed_modes = mixed_modes
         self.mode_threshold = mode_threshold
 
         self.col_types = {} # col_name: type
         self.categorical_labels = {} # col_name: labels list (only for categorical)
+        self.log_transf = log_transf
 
         for col in general_cols:
             self.col_types[col] = "general"
@@ -24,8 +25,8 @@ class DataPrep:
             # categories_temp = raw_df[col].unique()
             # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)} #one_hot_dict 
             self.categorical_labels[col] = np.array(raw_df[col].value_counts().index) # raw_df[col].unique() # categories for each class
-        
-        max_min_dec = {}
+            
+        max_min_dec = {} # max, min values and number of decimal places
         for el in list(raw_df.columns):
             if self.col_types[el] != "categorical":
                 dec_num_lst = list(raw_df[el].apply(lambda x: len(str(x).split(".")[1]) if "." in str(x) else 0)) # calc mode decimal places for each column
@@ -39,30 +40,31 @@ class DataPrep:
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
         self.vector_repres = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, transformed array
         self.models_cont_mixed= {"means": {}, "stds":{}, "components": {}} # used in inverse, model outputs for cont and mixed data
-        self.gen_min_max = {"min": {}, "max": {}} # used in inverse, min and max values for general transf
-
 
 
     def transform(self, raw_data):
         for key, value in self.col_types.items():
             current = raw_data[key]
             if value == "general":
+                current = current.to_numpy()
                 # get min, max values
-                max_v = raw_data[key].max()
-                min_v = raw_data[key].min()
-                self.gen_min_max["min"][key] = min_v
-                self.gen_min_max["max"][key] = max_v
+                max_v = self.max_min_dec[key][0]
+                min_v = self.max_min_dec[key][1]
+                
                 # transform
-                feature_transformed = 2*(raw_data[key]-min_v)/(max_v-min_v)-1
-                feature_transformed = feature_transformed.to_numpy().reshape(-1, 1)
+                feature_transformed = 2*(current-min_v)/(max_v-min_v)-1
+                feature_transformed = feature_transformed.reshape(-1, 1)
 
                 self.cols_mapping["general"].append([key, 1])
                 self.vector_repres["general"].append(feature_transformed.tolist())
 
             elif value == "categorical":
+                tmp_df = pd.DataFrame()
+                tmp_df[key] = pd.Categorical(current, categories=self.categorical_labels[key], ordered=True)
                 encoder=ce.OneHotEncoder(cols=key,handle_unknown='return_nan',return_df=True,use_cat_names=True)
 
-                feature_transformed = encoder.fit_transform(current)
+                feature_transformed = encoder.fit_transform(tmp_df)
+
                 feature_transformed = feature_transformed.to_numpy()
 
                 self.cols_mapping["categorical"].append([key, feature_transformed.shape[1]])
@@ -70,6 +72,18 @@ class DataPrep:
 
             elif value == "continuous":
                 current = current.to_numpy()
+                ## log-transformation
+                if key in self.log_transf:
+                    current = current.astype(np.float64)
+                    eps_log = 1e-6  # to avoid log(0)
+                    col_lim = self.max_min_dec[key][1] # get min of col
+
+                    if col_lim > 0:
+                        current = np.log(current)   # no need to shift
+                    else:
+                        current = np.log(current - col_lim + eps_log)  # shift before log
+                        
+                ## VGM
                 n_components = self.components_numbers[key]
                 
                 # fit model
@@ -121,9 +135,26 @@ class DataPrep:
                 self.cols_mapping["continuous"].append([key, feature_transformed.shape[1]])
                 self.vector_repres["continuous"].append(feature_transformed.tolist())
 
-            elif value== "mixed":
+            elif value == "mixed":
+
                 current = current.to_numpy()
+                
                 filter_cont = ~np.isin(current, self.mixed_modes[key]) # true for categorical part (modes)
+                
+                ## log-transformation
+                if key in self.log_transf:
+                    current = current.astype(np.float64)
+                    eps_log = 1e-6  # to avoid log(0)
+                    col_lim = self.max_min_dec[key][1] # get min of col
+
+                    if col_lim > 0:
+                        current[filter_cont] = np.log(current[filter_cont])   # no need to shift
+                    else:
+                        current[filter_cont] = np.log(current[filter_cont] -col_lim + eps_log)  # shift before log
+
+
+                ## VGM
+
                 n_components = self.components_numbers[key]
 
                 gm = BayesianGaussianMixture(
@@ -165,6 +196,8 @@ class DataPrep:
 
                 current = current.reshape([-1, 1])
                 current_cont = current[filter_cont] # get only continuous values
+
+                
                 probs = gm.predict_proba(current_cont.reshape([-1, 1])) # predicts the probability of current value belonging to each cluster
                 probs = probs[:, signif_modes_bool] # only significant modes
                 n_opts = sum(signif_modes_bool) # number of significant modes
@@ -200,7 +233,6 @@ class DataPrep:
 
                 self.cols_mapping["mixed"].append([key, feature_transformed.shape[1]])
                 self.vector_repres["mixed"].append(feature_transformed.tolist())
-        
         # combine together all types
         transformed_data_arrays = [] # transformed data
         transformed_col_names = [] # track columns names
@@ -211,30 +243,12 @@ class DataPrep:
                 counter = 0
             else:
                 counter = transformed_col_dims[len(transformed_col_dims)-1][0]+transformed_col_dims[len(transformed_col_dims)-1][1]
-            if key=="general":
-                for i in range(len(self.vector_repres[key])):
-                    transformed_data_arrays.append(self.vector_repres[key][i])
-                    transformed_col_names.append(self.cols_mapping[key][i][0])
-                    transformed_col_dims.append([counter,self.cols_mapping[key][i][1]])
-                    counter += self.cols_mapping[key][i][1]
-            elif key=="categorical":
-                for i in range(len(self.vector_repres[key])):
-                    transformed_data_arrays.append(self.vector_repres[key][i])
-                    transformed_col_names.append(self.cols_mapping[key][i][0])
-                    transformed_col_dims.append([counter, self.cols_mapping[key][i][1]])
-                    counter += self.cols_mapping[key][i][1]
-            elif key=="continuous":
-                for i in range(len(self.vector_repres[key])):
-                    transformed_data_arrays.append(self.vector_repres[key][i])
-                    transformed_col_names.append(self.cols_mapping[key][i][0])
-                    transformed_col_dims.append([counter, self.cols_mapping[key][i][1]])
-                    counter += self.cols_mapping[key][i][1]
-            elif key=="mixed":
-                for i in range(len(self.vector_repres[key])):
-                    transformed_data_arrays.append(self.vector_repres[key][i])
-                    transformed_col_names.append(self.cols_mapping[key][i][0])
-                    transformed_col_dims.append([counter, self.cols_mapping[key][i][1]])
-                    counter += self.cols_mapping[key][i][1]
+            for i in range(len(self.vector_repres[key])):
+                transformed_data_arrays.append(self.vector_repres[key][i])
+                transformed_col_names.append(self.cols_mapping[key][i][0])
+                transformed_col_dims.append([counter, self.cols_mapping[key][i][1]])
+                counter += self.cols_mapping[key][i][1]
+
         tranposed_data = list(map(list, zip(*transformed_data_arrays)))
         transformed_data = [sum(inner, []) for inner in tranposed_data] # flatten arrays for each row
 
@@ -255,10 +269,14 @@ class DataPrep:
                 u = np.array(current).flatten()
                 u = (u + 1) / 2
                 u = np.clip(u, 0, 1)
-                min_v = self.gen_min_max["min"][elem]
-                max_v = self.gen_min_max["max"][elem]
+                max_v = self.max_min_dec[elem][0]
+                min_v = self.max_min_dec[elem][1]
                 u = u * (max_v - min_v) + min_v
+
                 u = np.round(u, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
+                # save indices, where values are more than max and less then min
+                inv_res = np.array(np.where((u < self.max_min_dec[elem][1]) | (u > self.max_min_dec[elem][0]))).flatten()
+                indices_invalid.append(inv_res)
                 df_inverse[elem] = u
             
             elif self.col_types[elem]=="continuous":
@@ -277,8 +295,17 @@ class DataPrep:
                 mean_t = means.reshape([-1])[p_argmax]
                 tmp = u * 4 * std_t + mean_t
 
+                if elem in self.log_transf:
+                    col_lim = self.max_min_dec[elem][1]
+                    eps_log = 1e-6
+
+                    if col_lim > 0:
+                        tmp = np.exp(tmp)
+                    else:
+                        tmp = np.exp(tmp) + col_lim - eps_log
                 # save indices, where values are more than max and less then min
-                indices_invalid.append(list(np.where((tmp > self.max_min_dec[elem][1]) | (tmp < self.max_min_dec[elem][0]))))
+                inv_res = np.array(np.where((tmp < self.max_min_dec[elem][1]) | (tmp > self.max_min_dec[elem][0]))).flatten()
+                indices_invalid.append(inv_res)
                 tmp = np.round(tmp, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
                 df_inverse[elem] = tmp
 
@@ -291,18 +318,28 @@ class DataPrep:
                 std_t = stds.reshape([-1])[p_argmax]
                 mean_t = means.reshape([-1])[p_argmax]
 
+                if elem in self.log_transf:
+                    col_lim = self.max_min_dec[elem][1]
+                    eps_log = 1e-6
+
                 tmp = []
-                for i in range(len(current)):
-                    if current[i][0]==0:
+                for i in range(len(p_argmax)):
+                    if p_argmax[i]==0:
                         col_modes = dict(self.mixed_modes[elem])
                         val = col_modes.get(p_argmax[i])
                         tmp.append(val) # get the mode from dict
                     else:
                         val = current[i][0] * 4 * std_t[i] + mean_t[i]
+                        if elem in self.log_transf:
+                            if col_lim > 0:
+                                val = np.exp(val)
+                            else:
+                                val = np.exp(val) + col_lim - eps_log
                         tmp.append(val)
                 
                 # save indices, where values are more than max and less then min
-                indices_invalid.append(list(np.where((tmp < self.max_min_dec[elem][1]) | (tmp > self.max_min_dec[elem][0]))))
+                inv_res = np.array(np.where((tmp < self.max_min_dec[elem][1]) | (tmp > self.max_min_dec[elem][0]))).flatten()
+                indices_invalid.append(inv_res)
                 tmp = np.round(tmp, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
                 df_inverse[elem] = tmp
             elif self.col_types[elem]=="categorical":
@@ -310,9 +347,15 @@ class DataPrep:
                 idx = np.argmax(current, axis=1)
                 df_inverse[elem] = [labels[i] for i in idx]
 
-        row_idx = np.unique(np.concatenate(indices_invalid))
-        df_inverse_valid = df_inverse.drop(row_idx)
-        df_inverse_valid = df_inverse_valid.reset_index(drop=True)
-        df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
-        df_inverse_valid = df_inverse_valid[self.df_col_order]
-        return df_inverse_valid
+        if indices_invalid:
+            row_idx = np.unique(np.concatenate(indices_invalid))
+            df_inverse_valid = df_inverse.drop(row_idx)
+            df_inverse_valid = df_inverse_valid.reset_index(drop=True)
+            df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
+            df_inverse_valid = df_inverse_valid[self.df_col_order]
+            return df_inverse_valid
+        else:
+            df_inverse_valid = df_inverse.reset_index(drop=True)
+            df_inverse_valid = df_inverse_valid.astype(self.df_dtypes)
+            df_inverse_valid = df_inverse_valid[self.df_col_order]
+            return df_inverse_valid            
