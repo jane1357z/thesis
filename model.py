@@ -23,7 +23,7 @@ class Synthesizer:
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=100,
-                 epochs=2000,
+                 epochs=3000,
                  steps_d = 10, # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
                  steps_per_epoch_c=10,
@@ -43,7 +43,7 @@ class Synthesizer:
         self.steps_per_epoch_c = steps_per_epoch_c
         self.epochs_c = epochs_c
 
-    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
+    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, log_transf, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
         if class_balance == None and condition_list == None:
             case_name = "actual"
@@ -58,9 +58,10 @@ class Synthesizer:
         # transform data        
         self.transformer = DataPrep(raw_df=raw_data,
                     categorical_cols=categorical_cols,
-                    general_cols=general_cols,
                     continuous_cols=continuous_cols,
-                    mixed_cols=mixed_cols, 
+                    mixed_cols=mixed_cols,
+                    general_cols=general_cols,
+                    log_transf=log_transf,
                     components_numbers=components_numbers,
                     mode_threshold=self.mode_threshold,
                     mixed_modes=mixed_modes)
@@ -269,7 +270,7 @@ class Synthesizer:
 
 
         
-        print("Model evaluation")
+        
         ####### Evaluation
 
         if case_name == "constr_cond" or case_name == "constr":

@@ -14,11 +14,12 @@ def experiments():
 
 def reset_user_info():
     categorical_cols = ['Family', 'Education', 'Personal Loan', 'Securities Account', 'CD Account', 'Online', 'CreditCard']
-    general_cols = ['Age', 'Experience', 'CCAvg', 'Income', 'ZIP Code']
-    continuous_cols = []
+    general_cols = ['Age', 'Experience', 'Income', 'ZIP Code']
+    continuous_cols = ['CCAvg']
     mixed_cols = ['Mortgage']
-    components_numbers = {"Mortgage": 2}
+    components_numbers = {"Mortgage": 3, 'CCAvg': 1}
     mixed_modes = {"Mortgage": [0]}
+    log_transf = ['CCAvg', 'Mortgage']
 
     class_balance = {"CreditCard": [0.6,0.4]} # constraint
     condition_list = [{"col1":"Family", "cat1": 2, "col2": "Education", "cat2":2}]
@@ -27,7 +28,7 @@ def reset_user_info():
     target_col = "Personal Loan"
     data_name = "loan"
     task = "class" # "regr" "class"
-    return categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task
+    return categorical_cols, general_cols, continuous_cols, mixed_cols, log_transf, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task
 
 df_loan = pd.read_excel("data\\Bank_Personal_Loan_Modelling.xlsx",sheet_name=1)
 df_loan = df_loan.drop("ID", axis=1)
@@ -46,7 +47,7 @@ df_metrics = pd.DataFrame(columns=["JSD", "WD", "Corr.coef", "Theil.coef", "Corr
 df_metrics.index.name = "Statistical\nsimilarity"
 
 
-categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+categorical_cols, general_cols, continuous_cols, mixed_cols, log_transf, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
 
 if task == "class":
     ml_task = "(classification)"
@@ -71,6 +72,7 @@ model.fit(data_name=data_name,
     continuous_cols=continuous_cols,
     mixed_cols=mixed_cols,
     general_cols=general_cols,
+    log_transf=log_transf,
     components_numbers=components_numbers,
     mixed_modes=mixed_modes,
     target_col=target_col)
@@ -78,7 +80,7 @@ model.fit(data_name=data_name,
 synth_data = model.sample(1000)
 synth_data.to_csv(f"results/{data_name}/synth_data/actual.csv", sep=',', index=False)
 
-
+print("Data evaluation")
 evaluation_data = Data_evaluation(data_name, train_data, synth_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col)
 # # act - compare with actual data, without - compare with conditioned or constrined data, add_diff - class_balance/cond_ratio
 lst_metrics, lst_ml_utility, add_diff = evaluation_data.evaluate_data()
