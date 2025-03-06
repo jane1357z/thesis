@@ -49,6 +49,13 @@ class Synthesizer:
         self.steps_per_epoch = steps_per_epoch
         self.steps_per_epoch_c = steps_per_epoch_c
         self.epochs_c = epochs_c
+        self.step_size_g = step_size_g
+        self.gamma_g = gamma_g
+        self.lr_g = lr_g
+        self.step_size_d = step_size_d
+        self.gamma_d = gamma_d
+        self.lr_d = lr_d
+        self.i_exp = i_exp
 
     def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, log_transf, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
         # cases: actual, constr, cond, constr_cond
