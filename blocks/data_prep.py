@@ -40,7 +40,7 @@ class DataPrep:
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
         self.vector_repres = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, transformed array
         self.models_cont_mixed= {"means": {}, "stds":{}, "components": {}} # used in inverse, model outputs for cont and mixed data
-
+        self.gen_log_max_min = {}
 
     def transform(self, raw_data):
         for key, value in self.col_types.items():
@@ -50,7 +50,22 @@ class DataPrep:
                 # get min, max values
                 max_v = self.max_min_dec[key][0]
                 min_v = self.max_min_dec[key][1]
-                
+
+                ## log-transformation
+                if key in self.log_transf:
+                    current = current.astype(np.float64)
+                    eps_log = 1e-6  # to avoid log(0)
+                    col_lim = self.max_min_dec[key][1] # get min of col
+
+                    if col_lim > 0:
+                        current = np.log(current)   # no need to shift
+                    else:
+                        current = np.log(current - col_lim + eps_log)  # shift before log
+                    
+                    max_v = max(current)
+                    min_v = min(current)
+                    self.gen_log_max_min[key] = [max_v, min_v]
+
                 # transform
                 feature_transformed = 2*(current-min_v)/(max_v-min_v)-1
                 feature_transformed = feature_transformed.reshape(-1, 1)
@@ -90,7 +105,8 @@ class DataPrep:
                 gm = BayesianGaussianMixture(
                 n_components = n_components, 
                 weight_concentration_prior=0.001,  
-                random_state=42)
+                random_state=42,
+                max_iter=500)
 
                 gm.fit(current.reshape([-1, 1]))
                 mode_freq = (pd.Series(gm.predict(current.reshape([-1, 1]))).value_counts().keys()) # mode frequency descending order
@@ -160,7 +176,8 @@ class DataPrep:
                 gm = BayesianGaussianMixture(
                     n_components = n_components, 
                     weight_concentration_prior=0.001,  
-                    random_state=42)
+                    random_state=42,
+                    max_iter=500)
 
                 gm.fit(current.reshape([-1, 1])) # Fits the model on all values
                 mode_freq = (pd.Series(gm.predict(current.reshape([-1, 1]))).value_counts().keys()) # mode frequency descending order
@@ -269,9 +286,23 @@ class DataPrep:
                 u = np.array(current).flatten()
                 u = (u + 1) / 2
                 u = np.clip(u, 0, 1)
-                max_v = self.max_min_dec[elem][0]
-                min_v = self.max_min_dec[elem][1]
-                u = u * (max_v - min_v) + min_v
+                if elem not in self.log_transf:
+                    max_v = self.max_min_dec[elem][0]
+                    min_v = self.max_min_dec[elem][1]
+                    u = u * (max_v - min_v) + min_v
+                else:
+                    max_v = self.gen_log_max_min[elem][0]
+                    min_v = self.gen_log_max_min[elem][1]
+
+                    u = u * (max_v - min_v) + min_v
+                    
+                    col_lim = self.max_min_dec[elem][1]
+                    eps_log = 1e-6
+
+                    if col_lim > 0:
+                        u = np.exp(u)
+                    else:
+                        u = np.exp(u) + col_lim - eps_log
 
                 u = np.round(u, self.max_min_dec[elem][2]) # to have the same number of decimal numbers as real data
                 # save indices, where values are more than max and less then min

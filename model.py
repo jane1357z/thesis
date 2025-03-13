@@ -18,16 +18,16 @@ class Synthesizer:
                  noise_dim=128, # dim of z - noise vector for G 
                  generator_dim=[128], # list of integers, size(s) of hidden layers
                  discriminator_dim=[128], # list of integers, size(s) of hidden layers
-                 classifier_dim = [128], # list of integers of hidden layers
+                 classifier_dim = [128,128], # list of integers of hidden layers
                  constr_loss_coef = 100, # constraint loss coefficient
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
-                 batch_size=100,
-                 epochs=3000,
+                 batch_size=50,
+                 epochs=1000,
                  steps_d = 10, # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
-                 steps_per_epoch_c=10,
-                 epochs_c=100):
+                 steps_per_epoch_c=30,
+                 epochs_c=1000):
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -81,8 +81,8 @@ class Synthesizer:
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
-        classifier = Classifier(data_dim,self.classifier_dim, target_col, self.transformer.transformed_col_names, self.transformer.transformed_col_dims)
-        optimizer_params_C = dict(lr=2e-4, betas=(0.5, 0.9), eps=1e-3, weight_decay=1e-5)
+        classifier = Classifier(data_dim,self.classifier_dim, target_col, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.col_types)
+        optimizer_params_C = dict(lr=2e-4, betas=(0.5, 0.999), eps=1e-3, weight_decay=1e-5)
 
         optimizerC = optim.Adam(classifier.parameters(),**optimizer_params_C)
 
@@ -98,7 +98,6 @@ class Synthesizer:
                 optimizerC.zero_grad()
                 loss_cc.backward()
                 optimizerC.step()
-
 
         # initialize G
         self.generator = Generator(self.noise_dim + self.cond_vector.n_opt, self.generator_dim, train_data.shape[1])
@@ -207,7 +206,7 @@ class Synthesizer:
                 # generator loss
                 g_loss_gen = loss_generator(fake, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, self.cond_vector.cat_col_dims, c, m)
 
-                g_loss_orig_gen = g_loss_orig + g_loss_gen
+                # g_loss_orig_gen = g_loss_orig + g_loss_gen
                 # g_loss_orig_gen.backward(retain_graph=True)
 
                 # information loss
@@ -225,6 +224,17 @@ class Synthesizer:
                 
                 g_loss_info = loss_mean + loss_std 
                 # g_loss_info.backward(retain_graph=True)
+
+                ##### train C additionaly
+                # real_pre, real_label = classifier(real)
+
+                # loss_cc = classifier.loss_classification(real_pre, real_label)
+
+                # optimizerC.zero_grad()
+                # loss_cc.backward()
+                # optimizerC.step()
+                
+                #####
 
                 # classification loss G
                 fake_pre, fake_label = classifier(fake_act)
@@ -282,7 +292,7 @@ class Synthesizer:
 
 
     def sample(self, n_rows): # sample data after training is finished. User defines how many rows
-        
+        print("Sampling")
         self.generator.eval()
 
         steps = n_rows // self.batch_size + 1

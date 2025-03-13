@@ -13,28 +13,33 @@ def experiments():
     pass
 
 def reset_user_info():
-    categorical_cols = ['Family', 'Education', 'Personal Loan', 'Securities Account', 'CD Account', 'Online', 'CreditCard']
-    general_cols = ['Age', 'Experience', 'Income', 'ZIP Code']
-    continuous_cols = ['CCAvg']
-    mixed_cols = ['Mortgage']
-    components_numbers = {"Mortgage": 3, 'CCAvg': 1}
-    mixed_modes = {"Mortgage": [0]}
-    log_transf = ['CCAvg', 'Mortgage']
+    categorical_cols = ['sex', 'children', 'smoker', 'region']
+    general_cols = ['age', 'charges']
+    continuous_cols = ['bmi']
+    mixed_cols = []
+    components_numbers = {'bmi': 1}
+    mixed_modes = {}
+    log_transf = ['charges']
 
-    class_balance = {"CreditCard": [0.6,0.4]} # constraint
-    condition_list = [{"col1":"Family", "cat1": 2, "col2": "Education", "cat2":2}]
-    cond_ratio = 0.15
+    class_balance = {"smoker": [0.5,0.5]} # constraint
+    condition_list = [{"col1":"smoker", "cat1": "no", "col2": "cahildren", "cat2":0}]
+    cond_ratio = 0.5
 
-    target_col = "Personal Loan"
-    data_name = "loan"
-    task = "class" # "regr" "class"
+    target_col = "charges"
+    data_name = "insurance"
+    task = "regr" # "regr" "class"
     return categorical_cols, general_cols, continuous_cols, mixed_cols, log_transf, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task
 
-df_loan = pd.read_excel("data\\Bank_Personal_Loan_Modelling.xlsx",sheet_name=1)
-df_loan = df_loan.drop("ID", axis=1)
-df_loan.reset_index(drop=True, inplace=True)  # !!!
+# df_loan = pd.read_excel("data\\Bank_Personal_Loan_Modelling.xlsx",sheet_name=1)
+# df_loan = df_loan.drop("ID", axis=1)
+# df_loan.reset_index(drop=True, inplace=True)  # !!!
 
-train_data = df_loan.copy()
+# train_data = df_loan.copy()
+
+df_insurance = pd.read_csv("data\\insurance.csv")
+df_insurance.reset_index(drop=True, inplace=True)  # !!!
+
+train_data = df_insurance.copy()
 
 def add_to_df(lst_metrics, lst_ml_utility, row_case):
     df_metrics.loc[row_case] = lst_metrics
