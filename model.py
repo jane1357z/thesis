@@ -19,14 +19,14 @@ class Synthesizer:
                  generator_dim=[128], # list of integers, size(s) of hidden layers
                  discriminator_dim=[128], # list of integers, size(s) of hidden layers
                  classifier_dim = [128,128], # list of integers of hidden layers
-                 constr_loss_coef = 100, # constraint loss coefficient
+                 constr_loss_coef = 300, # constraint loss coefficient
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
-                 batch_size=50,
-                 epochs=1000,
-                 steps_d = 10, # number of updates D for 1 update G
+                 batch_size=500,
+                 epochs=300,
+                 steps_d = 5, # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
-                 steps_per_epoch_c=30,
+                 steps_per_epoch_c=1,
                  epochs_c=1000):
 
         self.noise_dim = noise_dim
@@ -226,13 +226,13 @@ class Synthesizer:
                 # g_loss_info.backward(retain_graph=True)
 
                 ##### train C additionaly
-                # real_pre, real_label = classifier(real)
+                real_pre, real_label = classifier(real)
 
-                # loss_cc = classifier.loss_classification(real_pre, real_label)
+                loss_cc = classifier.loss_classification(real_pre, real_label)
 
-                # optimizerC.zero_grad()
-                # loss_cc.backward()
-                # optimizerC.step()
+                optimizerC.zero_grad()
+                loss_cc.backward()
+                optimizerC.step()
                 
                 #####
 
@@ -248,7 +248,6 @@ class Synthesizer:
                 g_loss_info_lst.append(float(g_loss_info))
                 g_loss_class_lst.append(float(g_loss_class))
 
-                
                 if case_name == "constr_cond" or case_name == "constr":
                     # penalty_constraint
                     g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance, self.constr_loss_coef)

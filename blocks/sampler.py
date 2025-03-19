@@ -19,15 +19,13 @@ class Sampler(object):
         self.cat_ones_row_idx = []
         self.case_name = case_name
 
-        for key, value in self.col_types.items(): #categorical_labels
-            if value=="categorical":
-                st, ed = st_ed_col(key, self.col_names, self.col_dims)
-                tmp = []
-                for j in range(ed-st):
-                    tmp.append(np.nonzero(np.array(data)[:, st+j]))
-                self.cat_ones_row_idx.append(tmp) # row indeces where category is 1 for each column and its category
-            else:
-                pass
+        for key in self.categorical_labels.keys(): #categorical_labels
+            st, ed = st_ed_col(key, self.col_names, self.col_dims)
+            tmp = []
+            for j in range(ed-st):
+                tmp.append(np.nonzero(np.array(data)[:, st+j]))
+            self.cat_ones_row_idx.append(tmp) # row indeces where category is 1 for each column and its category
+
             
     # n: the number of samples to generate.
     # col: which categorical features to consider during sampling
@@ -47,6 +45,8 @@ class Sampler(object):
             for c, o in zip(col, opt):
                 if o[1] == None:
                     idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
+                elif o[0] == None:
+                    idx.append(np.random.choice(self.cat_ones_row_idx[c[1]][o[1]][0]))
                 else:
                     cond1 = self.cat_ones_row_idx[c[0]][o[0]][0]  # rows by first col-opt
                     cond2 = self.cat_ones_row_idx[c[1]][o[1]][0]  # rows by second col-opt
@@ -57,7 +57,10 @@ class Sampler(object):
                     if intersection.size > 0:
                         idx.append(np.random.choice(intersection))
                     else:
-                        idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
+                        if o[1] == None:
+                            idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
+                        else:
+                            idx.append(np.random.choice(self.cat_ones_row_idx[c[1]][o[1]][0]))
 
         return self.data[idx]
     

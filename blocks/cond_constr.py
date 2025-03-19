@@ -41,17 +41,14 @@ class Cond_vector(object):
         self.case_name = case_name
         self.cond_ratio = cond_ratio # threshold based on probability (how often we want to generate this condition)
 
-        for key, value in self.col_types.items(): #categorical_labels
-            if value=="categorical":
-                st, ed = st_ed_col(key, self.col_names, self.col_dims)
-                col_idx = self.col_names.index(key)
-                if not self.cat_col_dims:
-                    counter = 0
-                else:
-                    counter = self.cat_col_dims[len(self.cat_col_dims)-1][0]+self.cat_col_dims[len(self.cat_col_dims)-1][1]
-                self.cat_col_dims.append([counter, self.col_dims[col_idx][1]])
+        for key in self.categorical_labels.keys(): #categorical_labels
+            st, ed = st_ed_col(key, self.col_names, self.col_dims)
+            col_idx = self.col_names.index(key)
+            if not self.cat_col_dims:
+                counter = 0
             else:
-                pass
+                counter = self.cat_col_dims[len(self.cat_col_dims)-1][0]+self.cat_col_dims[len(self.cat_col_dims)-1][1]
+            self.cat_col_dims.append([counter, self.col_dims[col_idx][1]])
                
         self.n_col = len(self.categorical_labels)   # total number of categorical features in the data
         self.n_opt = sum(map(len, self.categorical_labels.values()))  # total number of options in feature
@@ -125,16 +122,77 @@ class Cond_vector(object):
     def category_choice_constr_cond(self, probs, col_idx): # !!!
         option_list = []
         class_balance_col = list(self.class_balance.keys())[0] 
-        for i in col_idx:
-            if list(self.categorical_labels.keys())[i] == class_balance_col:
-                pp = self.class_balance[class_balance_col] # takes probs from constraint
-                option_list.append(np.random.choice(np.arange(len(pp)), p=pp))
-                # compose condition
-            else:
-                # compose condition
-                pp = probs[i]
-                option_list.append(np.random.choice(np.arange(len(probs[i])), p=pp))
+        for i in range(len(col_idx)):
+            # check if the columns are conditioned
+            col_name_1 = list(self.categorical_labels.keys())[col_idx[i][0]]
+            col_name_2 = list(self.categorical_labels.keys())[col_idx[i][1]]
 
+            if (col_name_1 in class_balance_col or col_name_2 in class_balance_col) == True: # constr
+                col_num1 = False
+                if col_name_1 in class_balance_col:
+                    pp = self.class_balance[class_balance_col] # takes probs from constraint
+                    opt0 = np.random.choice(np.arange(len(pp)), p=pp)
+                    col_num1 = True
+                else: # 2nd col in constr
+                    pp = self.class_balance[class_balance_col] # takes probs from constraint
+                    opt1 = np.random.choice(np.arange(len(pp)), p=pp)
+                if (col_name_1 in self.condition_list[0].values() and col_name_2 in self.condition_list[0].values()) == True: # cond
+                    if col_num1 == True:
+                        if col_name_1 == self.condition_list[0]["col1"]:
+                            if opt0 == np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]: # check if chosen option is in cond
+                                epsilon = np.random.uniform(0,1)
+                                if epsilon <= self.cond_ratio:
+                                    opt1 = np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]
+                                else: opt1 = None
+                            else: opt1 = None
+                        else:
+                            if opt0 == np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]: # check if chosen option is in cond
+                                epsilon = np.random.uniform(0,1)
+                                if epsilon <= self.cond_ratio:
+                                    opt1 = np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]
+                                else: opt1 = None
+                            else: opt1 = None
+
+                    else:
+                        if col_name_2 == self.condition_list[0]["col1"]:
+                            if opt1 == np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]: # check if chosen option is in cond
+                                epsilon = np.random.uniform(0,1)
+                                if epsilon <= self.cond_ratio:
+                                    opt0 = np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]
+                                else: opt0 = None
+                            else: opt0 = None        
+                        else:
+                            if opt1 == np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]: # check if chosen option is in cond
+                                epsilon = np.random.uniform(0,1)
+                                if epsilon <= self.cond_ratio:
+                                    opt0 = np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]
+                                else: opt0 = None
+                            else: opt0 = None                   
+                else: # only constr, no cond
+                    opt0, opt1 = (opt0, None) if col_num1 else (None, opt1)
+            # condtion (no constr, but cond)
+            elif (col_name_1 in self.condition_list[0].values() and col_name_2 in self.condition_list[0].values()) == True:
+                epsilon = np.random.uniform(0,1)
+                if epsilon <= self.cond_ratio:
+                    if col_name_1 == self.condition_list[0]["col1"]: # get the row under condition
+                        opt0 = np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]
+                        opt1 = np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]
+                    else:
+                        opt0 = np.where(self.categorical_labels[self.condition_list[0]["col2"]]==self.condition_list[0]["cat2"])[0][0]
+                        opt1 = np.where(self.categorical_labels[self.condition_list[0]["col1"]]==self.condition_list[0]["cat1"])[0][0]
+                else:
+                    pp0 = probs[col_idx[i][0]] # get actual probs (no condition applied), col_idx[i][0] - to get first col of condition
+                    opt0 = np.random.choice(np.arange(len(probs[col_idx[i][0]])), p=pp0) # get option based on actual prob
+                    opt1 = None # no need another conditioned column
+            
+            # actual (no constr or cond)
+            else:
+                pp0 = probs[col_idx[i][0]] # get actual probs (no condition applied), col_idx[i][0] - to get first col of condition
+                opt0 = np.random.choice(np.arange(len(probs[col_idx[i][0]])), p=pp0) # get option based on actual prob
+                opt1 = None
+            if [opt0, opt1] == [None, None]:
+                pass
+            option_list.append([opt0, opt1])
         return np.array(option_list).reshape(col_idx.shape)
     
     def sample_train(self, batch): # conditional vectors for training - using log probabilities
@@ -173,8 +231,8 @@ class Cond_vector(object):
             col_idx = np.array([np.random.choice(np.arange(self.n_col), size=2, replace=False) for _ in range(batch)])
 
             mask = np.zeros((batch, self.n_col), dtype='float32') # categorical column was selected for each sample
-            mask[np.arange(batch), col_idx[:, 0]] = 1 # set the first column
-            mask[np.arange(batch), col_idx[:, 1]] = 1  # set the second column
+            # mask[np.arange(batch), col_idx[:, 0]] = 1 # set the first column
+            # mask[np.arange(batch), col_idx[:, 1]] = 1  # set the second column
 
             vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
 
@@ -184,28 +242,44 @@ class Cond_vector(object):
             for i in np.arange(batch): 
                 if opt1prime[i][1] == None:
                     vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                    
+                    mask[i, col_idx[i][0]] = 1 # set the first column
                 else:
                     vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
                     vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1
+                    
+                    mask[i, col_idx[i][0]] = 1 # set the first column
+                    mask[i, col_idx[i][1]] = 1  # set the second column
 
         elif self.case_name == "constr_cond":
             # col and opt - 2
             col_idx = np.array([np.random.choice(np.arange(self.n_col), size=2, replace=False) for _ in range(batch)])
 
             mask = np.zeros((batch, self.n_col), dtype='float32') # categorical column was selected for each sample
-            mask[np.arange(batch), col_idx[:, 0]] = 1 # set the first column
-            mask[np.arange(batch), col_idx[:, 1]] = 1  # set the second column
 
             vec = np.zeros((batch, self.n_opt), dtype='float32') # one-hot encoded conditional vectors only for categorical colimns!
 
             ### case constr_cond get column from constraint and sample from class_balance and conditions col and opt - 2
             opt1prime = self.category_choice_constr_cond(self.p_sampling, col_idx) # category choice for current column - batch
+            
             for i in np.arange(batch): 
                 if opt1prime[i][1] == None:
-                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1
+                    
+                    mask[i, col_idx[i][0]] = 1 # set the first column
+                
+                elif opt1prime[i][0] == None:
+                    vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put first 1
+
+                    mask[i, col_idx[i][1]] = 1 # set the first column
+                
                 else:
                     vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
                     vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1
+                    
+                    mask[i, col_idx[i][0]] = 1 # set the first column
+                    mask[i, col_idx[i][1]] = 1  # set the second column
+
 
 
         return vec, mask, col_idx, opt1prime
@@ -230,7 +304,7 @@ class Cond_vector(object):
 
             for i in np.arange(batch):
                 if opt1prime[i][1] == None:
-                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
+                    vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1
                 else:
                     vec[i, self.cat_col_dims[col_idx[i][0]][0] + opt1prime[i][0]] = 1 # put first 1 
                     vec[i, self.cat_col_dims[col_idx[i][1]][0] + opt1prime[i][1]] = 1 # put second 1

@@ -108,7 +108,7 @@ class Data_evaluation(object):
             case_name = "constr"
             key_cat = list(class_balance.keys())[0]
             prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
-            self.real_data_constr = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict))
+            self.real_data_constr = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
 
             self.class_balance = class_balance
             
@@ -150,6 +150,42 @@ class Data_evaluation(object):
             self.class_balance = class_balance
             self.condition_list = condition_list
             self.cond_ratio = cond_ratio
+
+            key_cat = list(class_balance.keys())[0]
+            prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
+
+            self.real_data_constr_cond = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
+
+            ind_cond = real_data.index[(real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
+
+            real_cond_count = len(ind_cond) # how many conditioned rows in real data
+            self.real_cond_count = real_cond_count
+
+            # real_data_tmp = self.real_data.sample(frac=0.9, weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
+
+
+            # n_samples = len(self.fake_data) # length of the real data for comparison   !!maybe other algo
+            # # find indices in real data for conditioned rows and not conditioned separately
+            # ind_cond = real_data_tmp.index[(real_data_tmp[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data_tmp[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
+            # ind_rest = real_data_tmp.index[~((real_data_tmp[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data_tmp[condition_list[0]["col2"]] == condition_list[0]["cat2"]))].to_numpy()
+
+            # real_cond_count = len(ind_cond) # how many conditioned rows in real data
+            # self.real_cond_count = real_cond_count
+            
+            # if real_cond_count < n_samples*cond_ratio: # if there are not enough conditioned rows in real data
+            #     r_data_size = len(real_data_tmp)
+            #     cond_ratio =self.real_cond_count/r_data_size
+
+            # choices = np.random.choice([0, 1], size=n_samples, p=[cond_ratio, 1-cond_ratio]) # get choice from which array to sample based on cond_ratio
+
+            # cond_sample = np.random.choice(ind_cond, size=np.sum(choices == 0), replace=False) # sample cond rows from indices
+            # rest_sample = np.random.choice(ind_rest, size=np.sum(choices == 1), replace=False) # sample rest rows from indices
+
+            # indices = np.empty(n_samples, dtype=int) # concatinate sampled indices
+            # indices[choices == 0] = cond_sample
+            # indices[choices == 1] = rest_sample
+
+            # self.real_data_constr_cond = real_data_tmp.iloc[indices, :].reset_index(drop=True) # get conditioned dataframe
 
             self.row_case = "Constr & Cond"
         
@@ -316,7 +352,7 @@ class Data_evaluation(object):
         if model_name == "dt":
             model = tree.DecisionTreeClassifier(random_state=42)
         elif model_name == "mlp":
-            model = MLPClassifier(random_state=42,max_iter=100)
+            model = MLPClassifier(random_state=42,max_iter=1000)
         
         model.fit(x_train, y_train)
         pred_labels = model.predict(x_test)
@@ -346,7 +382,7 @@ class Data_evaluation(object):
         if model_name == "dt":
             model = tree.DecisionTreeRegressor(random_state=42)
         elif model_name == "mlp":
-            model = MLPRegressor(random_state=42,max_iter=100)
+            model = MLPRegressor(random_state=42,max_iter=1000)
         
         model.fit(x_train, y_train)
         pred = model.predict(x_test)
@@ -420,7 +456,7 @@ class Data_evaluation(object):
                 if target_col in non_cat_cols_mlp:
                     non_cat_cols_mlp.remove(target_col)
 
-                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='value',return_df=True,use_cat_names=True)
                 cat_feature_transformed = encoder.fit_transform(real_data_indep_init.loc[:, cat_cols_mlp])
 
                 scaler = MinMaxScaler()
@@ -502,7 +538,7 @@ class Data_evaluation(object):
                 if target_col in non_cat_cols_mlp:
                     non_cat_cols_mlp.remove(target_col)
 
-                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='value',return_df=True,use_cat_names=True)
                 cat_feature_transformed = encoder.fit_transform(real_data_indep_init.loc[:, cat_cols_mlp])
                 scaler = MinMaxScaler()
                 non_cat_feature_transformed = scaler.fit_transform(real_data_indep_init.loc[:, non_cat_cols_mlp])
@@ -590,9 +626,8 @@ class Data_evaluation(object):
     
 
     def evaluate_data(self):
-        # df_metrics_act, df_ml_utility_act = self.evaluation_metrics(self.real_data)
-        # real data depends on the case, fake data is the same
         
+        # real data depends on the case, fake data is the same
         if self.case_name == "actual":
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data)
             add_diff = None
@@ -605,5 +640,12 @@ class Data_evaluation(object):
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_cond)
             add_diff = cond_prob_diff
         elif self.case_name == "constr_cond":
-            pass
-        return lst_metrics, lst_ml_utility, add_diff
+            cat_balance_diff = self.check_constraints()
+            cond_prob_diff= self.check_conditions()
+            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr_cond)
+            add_diff = [cat_balance_diff, cond_prob_diff]
+        
+        lst_metrics_act, lst_ml_utility_act = self.evaluation_metrics(self.real_data)
+        
+        
+        return lst_metrics, lst_ml_utility, add_diff, lst_metrics_act, lst_ml_utility_act

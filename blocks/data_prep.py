@@ -39,7 +39,7 @@ class DataPrep:
 
         self.cols_mapping = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, # of columns in transformed
         self.vector_repres = {"general": [], "continuous": [], "mixed": [], "categorical": []} # for each type - col_name, transformed array
-        self.models_cont_mixed= {"means": {}, "stds":{}, "components": {}} # used in inverse, model outputs for cont and mixed data
+        self.models_cont_mixed= {"means": {}, "stds":{}, "components": {}, "modes_idx": {}} # used in inverse, model outputs for cont and mixed data
         self.gen_log_max_min = {}
 
     def transform(self, raw_data):
@@ -76,7 +76,7 @@ class DataPrep:
             elif value == "categorical":
                 tmp_df = pd.DataFrame()
                 tmp_df[key] = pd.Categorical(current, categories=self.categorical_labels[key], ordered=True)
-                encoder=ce.OneHotEncoder(cols=key,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                encoder=ce.OneHotEncoder(cols=key,handle_unknown='value',return_df=True,use_cat_names=True)
 
                 feature_transformed = encoder.fit_transform(tmp_df)
 
@@ -106,7 +106,7 @@ class DataPrep:
                 n_components = n_components, 
                 weight_concentration_prior=0.001,  
                 random_state=42,
-                max_iter=500)
+                max_iter=1000)
 
                 gm.fit(current.reshape([-1, 1]))
                 mode_freq = (pd.Series(gm.predict(current.reshape([-1, 1]))).value_counts().keys()) # mode frequency descending order
@@ -177,7 +177,7 @@ class DataPrep:
                     n_components = n_components, 
                     weight_concentration_prior=0.001,  
                     random_state=42,
-                    max_iter=500)
+                    max_iter=1000)
 
                 gm.fit(current.reshape([-1, 1])) # Fits the model on all values
                 mode_freq = (pd.Series(gm.predict(current.reshape([-1, 1]))).value_counts().keys()) # mode frequency descending order
@@ -200,7 +200,7 @@ class DataPrep:
                 self.models_cont_mixed["means"][key] = means
                 self.models_cont_mixed["stds"][key] = stds
 
-                zero_std_list = [] # index of mean for modes
+                # zero_std_list = [] # index of mean for modes
 
                 for i in range(len(self.mixed_modes[key])): # define the mode to mean index
                     mode = self.mixed_modes[key][i]
@@ -209,7 +209,8 @@ class DataPrep:
                         dist.append(abs(mode - val))
                     index_min = np.argmin(np.array(dist))
                     self.mixed_modes[key][i] = [index_min, mode] # mode index and mode value
-                    zero_std_list.append(index_min)
+                    self.models_cont_mixed["modes_idx"][key] = index_min
+                    # zero_std_list.append(index_min)
 
                 current = current.reshape([-1, 1])
                 current_cont = current[filter_cont] # get only continuous values
@@ -242,7 +243,7 @@ class DataPrep:
                     if val.item() in col_modes.keys():
                         category_index = col_modes.get(val.item())
                         feature_transformed[idx, 0] = 0 # alpha for categorical part is 0
-                        feature_transformed[idx, (zero_std_list[category_index]+1)] = 1    
+                        feature_transformed[idx, (category_index+1)] = 1    
                     else:
                         feature_transformed[idx, 0] = features[features_list_counter] # alpha 
                         feature_transformed[idx, 1:] = mean_probs_onehot[features_list_counter]
@@ -355,7 +356,7 @@ class DataPrep:
 
                 tmp = []
                 for i in range(len(p_argmax)):
-                    if p_argmax[i]==0:
+                    if p_argmax[i]==self.models_cont_mixed["modes_idx"][elem]:
                         col_modes = dict(self.mixed_modes[elem])
                         val = col_modes.get(p_argmax[i])
                         tmp.append(val) # get the mode from dict
