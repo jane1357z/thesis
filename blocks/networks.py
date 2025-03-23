@@ -11,12 +11,14 @@ def st_ed_col(target_col, col_names, col_dims): # find indeces (starting and end
     return st, ed
 
 class Classifier(Module):
-    def __init__(self,input_dim, dis_dims, target_col, col_names, col_dims): # input_dim - number features, dis_dims - A list of integers, size(s) of a hidden layer(s)
+    def __init__(self,input_dim, dis_dims, target_col, col_names, col_dims, col_types): # input_dim - number features, dis_dims - A list of integers, size(s) of a hidden layer(s)
         super(Classifier,self).__init__()
         # layer construction
         self.target_col = target_col
         self.col_names = col_names
         self.col_dims = col_dims
+        self.col_types = col_types
+
         st, ed = st_ed_col(self.target_col, self.col_names, self.col_dims)
         self.str_end = [st,ed]
         dim = input_dim-(self.str_end[1]-self.str_end[0]) # number of features without target column(s)
@@ -29,48 +31,129 @@ class Classifier(Module):
                 Dropout(0.5)
             ]
             dim = item # updated with each layer to match the number of output features from the previous layer
-        
-        # create output layer, depending on the sise of labels (one-hot encoded labels [0,0,1])
-        #type of activation function used in the final layer depends on the task
-        if (self.str_end[1]-self.str_end[0])==1:
-            seq += [Linear(dim, 1)] # single unit with no activation function (a regression problem) 
-        
-        elif (self.str_end[1]-self.str_end[0])==2:
-            seq += [Linear(dim, 1),Sigmoid()] # binary classification one-hot encoded => 2 columns, eather or => sigmoid
-        else:
-            seq += [Linear(dim,(self.str_end[1]-self.str_end[0]))]  # multi-class classification (will be later)
-        
+
         # stacks all the layers to pass an input through the layers 
         self.seq = Sequential(*seq)
 
+        # create output layer, depending on the sise of labels (one-hot encoded labels [0,0,1]) and the col type!
+        #type of activation function used in the final layer depends on the task
+        target_col_type = self.col_types[self.target_col]
+        if target_col_type == "categorical":
+            if (self.str_end[1]-self.str_end[0])==2:
+                self.out_layer = Sequential(Linear(dim, 1),Sigmoid()) # binary classification one-hot encoded => 2 columns, eather or => sigmoid
+            else:
+                self.out_layer = Linear(dim,(self.str_end[1]-self.str_end[0]))  # multi-class classification
+            
+        elif target_col_type =="mixed" or target_col_type == "continuous":
+            if (self.str_end[1]-self.str_end[0])==3:
+                self.out_layer_alpha = Linear(dim, 1) # single unit with no activation function (a regression problem) 
+                self.out_layer_mode = Sequential(Linear(dim, 1),Sigmoid()) # binary classification one-hot encoded => 2 columns, eather or => sigmoid
+            else:
+                self.out_layer_alpha = Linear(dim, 1)  # single unit with no activation function (a regression problem) 
+                self.out_layer_mode = Linear(dim,(self.str_end[1]-self.str_end[0]-1))  # multi-class classification           
+        else: # general
+            self.out_layer = Linear(dim, 1)
+
+        # if (self.str_end[1]-self.str_end[0])==1:
+        #     seq += [Linear(dim, 1)] # single unit with no activation function (a regression problem) 
+        
+        # elif (self.str_end[1]-self.str_end[0])==2:
+        #     seq += [Linear(dim, 1),Sigmoid()] # binary classification one-hot encoded => 2 columns, eather or => sigmoid
+        # else:
+        #     seq += [Linear(dim,(self.str_end[1]-self.str_end[0]))]  # multi-class classification
+        
+
+
     def forward(self, input_d):
         
+        # get correct labels
         label=None
-        
-        if (self.str_end[1]-self.str_end[0])==1: # one target column
-            label = input_d[:, self.str_end[0]:self.str_end[1]] # extracted directly
-        else:
+        target_col_type = self.col_types[self.target_col]
+        if target_col_type == "categorical":
             label = torch.argmax(input_d[:, self.str_end[0]:self.str_end[1]], axis=-1) # finds the index of the highest value in given columns, which is the predicted class
+
+        elif target_col_type =="mixed" or target_col_type == "continuous":
+            label_alpha = input_d[:, self.str_end[0]:self.str_end[0]+1] # extracted directly
+            label_mode = torch.argmax(input_d[:, self.str_end[0]+1:self.str_end[1]], axis=-1).view(-1, 1)  # finds the index of the highest value in given columns, which is the predicted class
+            label = torch.cat((label_alpha,label_mode),1) 
+        else: # general
+            label = input_d[:, self.str_end[0]:self.str_end[1]] # extracted directly
+
+
+        # if (self.str_end[1]-self.str_end[0])==1: # one target column
+        #     label = input_d[:, self.str_end[0]:self.str_end[1]] # extracted directly
+        # else:
+        #     label = torch.argmax(input_d[:, self.str_end[0]:self.str_end[1]], axis=-1) # finds the index of the highest value in given columns, which is the predicted class
         
         new_imp = torch.cat((input_d[:,:self.str_end[0]],input_d[:,self.str_end[1]:]),1) # removes the target columns and concatenates the parts 
         
         # pass new input through layers
-        if ((self.str_end[1]-self.str_end[0])==2) | ((self.str_end[1]-self.str_end[0])==1):
-            return self.seq(new_imp).view(-1), label #  flatten
-        else:
-            return self.seq(new_imp), label
+
+        if target_col_type == "categorical":
+            if (self.str_end[1]-self.str_end[0])==2:
+                seq_out = self.seq(new_imp)
+                return self.out_layer(seq_out).view(-1), label #  flatten
+            else:
+                seq_out = self.seq(new_imp)
+                return self.out_layer(seq_out), label
+
+        elif target_col_type =="mixed" or target_col_type == "continuous":
+            if (self.str_end[1]-self.str_end[0])==3:
+                seq_out = self.seq(new_imp)
+                alpha_out = self.out_layer_alpha(seq_out)
+                mode_out = self.out_layer_mode(seq_out)
+            else:
+                seq_out = self.seq(new_imp)
+                alpha_out = self.out_layer_alpha(seq_out)
+                mode_out = self.out_layer_mode(seq_out)
+            return torch.cat((alpha_out, mode_out), 1), label
+        else: # general
+            seq_out = self.seq(new_imp)
+            return self.out_layer(seq_out).view(-1), label #  flatten
+
+        # if ((self.str_end[1]-self.str_end[0])==2) | ((self.str_end[1]-self.str_end[0])==1):
+        #     return self.seq(new_imp).view(-1), label #  flatten
+        # else:
+        #     return self.seq(new_imp), label
         
     def loss_classification(self, predications, labels):
-        if (self.str_end[1] - self.str_end[0])==1:
+        target_col_type = self.col_types[self.target_col]
+        if target_col_type == "categorical":
+            if (self.str_end[1]-self.str_end[0])==2:
+                c_loss = BCELoss()
+                labels = labels.type_as(predications)
+            else:
+                c_loss = CrossEntropyLoss()
+            loss_value = c_loss(predications, labels)
+        elif target_col_type =="mixed" or target_col_type == "continuous":
+            c_loss_alpha= SmoothL1Loss()
+            labels_alpha = labels[:,0:1].type_as(predications[:,0:1])
+            labels_alpha = torch.reshape(labels_alpha,predications[:,0:1].size())
+            if (self.str_end[1]-self.str_end[0])==3:
+                c_loss_mode = BCELoss()
+                labels_mode = labels[:,1:].type_as(predications[:,1:])
+            else:
+                c_loss_mode = CrossEntropyLoss()
+                labels_mode = labels[:,1:].view(-1).long()
+            loss_value = c_loss_alpha(predications[:,0:1], labels_alpha) + c_loss_mode(predications[:,1:], labels_mode)
+        else: # general
             c_loss= SmoothL1Loss()
             labels = labels.type_as(predications)
             labels = torch.reshape(labels,predications.size())
-        elif (self.str_end[1] - self.str_end[0])==2:
-            c_loss = BCELoss()
-            labels = labels.type_as(predications)
-        else:
-            c_loss = CrossEntropyLoss() 
-        return c_loss(predications, labels) 
+            loss_value = c_loss(predications, labels)
+
+        return loss_value
+    
+        # if (self.str_end[1] - self.str_end[0])==1:
+        #     c_loss= SmoothL1Loss()
+        #     labels = labels.type_as(predications)
+        #     labels = torch.reshape(labels,predications.size())
+        # elif (self.str_end[1] - self.str_end[0])==2:
+        #     c_loss = BCELoss()
+        #     labels = labels.type_as(predications)
+        # else:
+        #     c_loss = CrossEntropyLoss() 
+        # return c_loss(predications, labels) 
 
 
 class Discriminator(Module):
@@ -84,7 +167,7 @@ class Discriminator(Module):
         for item in discriminator_dim:
             seq += [Linear(dim, item),
                     LeakyReLU(0.2),
-                    Dropout(0.5)]
+                    Dropout(0.4)]
             dim = item # updated with each layer to match the number of output features from the previous layer
 
         # output layer
@@ -165,11 +248,21 @@ def apply_activate(data, col_types, col_names, col_dims): # transform G`s output
         if value=="categorical":
             data_t.append(F.gumbel_softmax(data[:, st:ed], tau=0.2)) # tau controls how "sharp" or "soft" the output probabilities are
             # tau=0.2  sharper, more confident probabilities, output values are closer to one-hot, meaning the distribution picks a single category with higher certainty
-        else: # cont, mixed, general
+        elif value=="mixed" or value == "continuous":
+            alpha_tmp = torch.tanh(data[:, st:st+1]) # alpha
+            mode_tmp = F.gumbel_softmax(data[:, st+1:ed], tau=0.2) # one-hot encoded modes
+            data_t.append(torch.cat([alpha_tmp, mode_tmp], dim=1))
+        # elif value=="continuous":
+        #     if ed-st == 1:
+        #         data_t.append(torch.tanh(data[:, st:ed])) # single-mode
+        #     else: # multimodal
+        #         alpha_tmp = torch.tanh(data[:, st:st+1]) # alpha
+        #         mode_tmp = F.gumbel_softmax(data[:, st+1:ed], tau=0.2) # one-hot encoded modes
+        #         data_t.append(torch.cat([alpha_tmp, mode_tmp], dim=1))              
+        else: # general
             data_t.append(torch.tanh(data[:, st:ed]))
     return torch.cat(data_t, dim=1) # dim=1 feature dimension, merges tensors along the feature dimension
     
-
     # cross entropy loss - generator loss
 def loss_generator(data, col_names, col_dims, categorical_labels, cat_col_dims, c, m): # c- cond vector, m - one-hot encoded mask for the chosen column, data - generated data
     loss = []

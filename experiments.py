@@ -25,7 +25,7 @@ def reset_user_info():
     condition_list = [{"col1":"Family", "cat1": 2, "col2": "Education", "cat2":2}]
     cond_ratio = 0.15
 
-    target_col = "Personal Loan"
+    target_col = "Mortgage"
     data_name = "loan"
     task = "class" # "regr" "class"
     return categorical_cols, general_cols, continuous_cols, mixed_cols, log_transf, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task
@@ -62,7 +62,7 @@ df_ml_utility.index.name = f"ML utility\n{ml_task}"
 
 
 def model_test(df_metrics, df_ml_utility, epochs, step_size_g, gamma_g, lr_g, step_size_d, gamma_d, lr_d, i_exp):
-    categorical_cols, general_cols, continuous_cols, mixed_cols, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
+    categorical_cols, general_cols, continuous_cols, mixed_cols, log_transf, components_numbers, mixed_modes, class_balance, condition_list, cond_ratio, target_col, data_name, task = reset_user_info()
     model = Synthesizer(epochs=epochs,
                     step_size_g=step_size_g,
                     gamma_g=gamma_g, 
@@ -77,7 +77,7 @@ def model_test(df_metrics, df_ml_utility, epochs, step_size_g, gamma_g, lr_g, st
         continuous_cols=continuous_cols,
         mixed_cols=mixed_cols,
         general_cols=general_cols,
-    log_transf=log_transf,
+        log_transf=log_transf,
         components_numbers=components_numbers,
         mixed_modes=mixed_modes,
         target_col=target_col)
@@ -97,14 +97,15 @@ def model_test(df_metrics, df_ml_utility, epochs, step_size_g, gamma_g, lr_g, st
 ## experiments
 # gamma_d_lst = [0.4,0.5,0.6,0.7,0.8,0.9]
 # step_size_g_lst = [20,30,40,50]
-lr_g_lst = [5e-3, 2e-3, 2e-4, 2e-5]
+# lr_g_lst = [5e-3, 2e-3, 2e-4, 2e-5]
+lr_g_lst = [5e-2, 6e-3, 2e-4, 2e-5]
 for i in range(len(lr_g_lst)):
     print(i)
-    step_size_g=100
+    step_size_g=50
     gamma_g=0.8
     lr_g=lr_g_lst[i]
-    lr_d=2e-4
-    step_size_d=10
+    lr_d=5e-3
+    step_size_d=50
     gamma_d=0.8
     i_exp=i
     epochs=500

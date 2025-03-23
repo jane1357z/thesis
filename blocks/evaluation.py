@@ -3,40 +3,28 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import category_encoders as ce
 
-from torchmetrics import Accuracy  # for binary or multi-class classification
 from sklearn import metrics
-import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import pyplot as plt
-import torch
 
 from scipy.spatial import distance
 from scipy.stats import wasserstein_distance
 from dython.nominal import theils_u, correlation_ratio
 from sklearn.cluster import KMeans 
 from sklearn.metrics import silhouette_samples, silhouette_score
-import matplotlib.cm as cm
 
 from sklearn import tree
 from sklearn import metrics
-from sklearn.preprocessing import MinMaxScaler,StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 class Model_evaluation(object):
-    def __init__(self, epochs, steps_per_epoch, steps_d, case_name, data_name,step_size_g, gamma_g, lr_g, step_size_d, gamma_d, lr_d, i_exp):
+    def __init__(self, epochs, steps_per_epoch, steps_d, case_name, data_name):
         self.epochs = epochs
         self.steps_per_epoch = steps_per_epoch
         self.steps_d = steps_d
         self.case_name = case_name
         self.data_name = data_name
-        
-        self.step_size_g = step_size_g
-        self.gamma_g = gamma_g
-        self.step_size_d = step_size_d
-        self.gamma_d = gamma_d
-        self.lr_g = lr_g
-        self.lr_d = lr_d
-        self.i_exp = i_exp
 
     def losses_plot(self, d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst=None):
         # plot each loss and save on pdf
@@ -55,7 +43,7 @@ class Model_evaluation(object):
         g_loss_info = np.mean(g_loss_info_lst.reshape(-1, self.steps_per_epoch), axis=1)
         g_loss_class = np.mean(g_loss_class_lst.reshape(-1, self.steps_per_epoch), axis=1)
         
-        if g_loss_constr_lst != None: # depending on the case (with/without constr)
+        if g_loss_constr_lst != None: # depending on the case
             g_loss_constr_lst = np.array(g_loss_constr_lst)
             g_loss_constr = np.mean(g_loss_constr_lst.reshape(-1, self.steps_per_epoch), axis=1)
         
@@ -74,9 +62,9 @@ class Model_evaluation(object):
                 ax.set_xlabel('Epoch')
                 ax.set_ylabel('Loss')
                 ax.set_title(names_losses[i])
-        fig.suptitle(f"Losses lr_g={self.lr_g}, gamma_g={self.gamma_g}, step_size_g={self.step_size_g}, lr_d={self.lr_d}, gamma_d={self.gamma_d}, step_size_d={self.step_size_d}")
+        fig.suptitle(f"{self.data_name}. Losses")
         fig.subplots_adjust(hspace=0.3)
-        fig.savefig(f'results/Losses_{self.i_exp}.pdf', bbox_inches='tight')
+        fig.savefig(f'results/{self.data_name}/model_eval/Losses_{self.case_name}.pdf', bbox_inches='tight')
         plt.close()
 
     def calc_metrics(self, time_epoch, d_auc_score):
@@ -89,12 +77,12 @@ class Model_evaluation(object):
         plt.plot(range(0, self.epochs), d_auc_score_epoch, ls='-', label=f"{self.case_name}.Discriminator AUC Score", color='b')
         plt.xlabel('epoch')
         plt.ylabel('d_auc_score')
-        # plt.savefig(f'results/{self.data_name}/model_eval/d_auc_score_{self.case_name}.pdf', bbox_inches='tight')
+        plt.savefig(f'results/{self.data_name}/model_eval/d_auc_score_{self.case_name}.pdf', bbox_inches='tight')
         plt.close()
 
-        # with open(f'results/{self.data_name}/model_eval/metrics.txt', "a") as f:
-        #     f.write(f"Avg train epoch time: {avg_train_epoch_time}\n")
-        #     f.write(f"d auc score last epoch: {d_auc_score_epoch[-1]}\n")
+        with open(f'results/{self.data_name}/model_eval/metrics.txt', "a") as f:
+            f.write(f"Avg train epoch time: {avg_train_epoch_time}\n")
+            f.write(f"d auc score last epoch: {d_auc_score_epoch[-1]}\n")
 
 class Data_evaluation(object):
     def __init__(self, data_name, real_data, fake_data, categorical_cols, general_cols, continuous_cols, mixed_cols, mixed_modes, task, target_col, class_balance=None, condition_list=None, cond_ratio = None):
@@ -120,7 +108,7 @@ class Data_evaluation(object):
             case_name = "constr"
             key_cat = list(class_balance.keys())[0]
             prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
-            self.real_data_constr = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict))
+            self.real_data_constr = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
 
             self.class_balance = class_balance
             
@@ -162,6 +150,42 @@ class Data_evaluation(object):
             self.class_balance = class_balance
             self.condition_list = condition_list
             self.cond_ratio = cond_ratio
+
+            key_cat = list(class_balance.keys())[0]
+            prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
+
+            self.real_data_constr_cond = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
+
+            ind_cond = real_data.index[(real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
+
+            real_cond_count = len(ind_cond) # how many conditioned rows in real data
+            self.real_cond_count = real_cond_count
+
+            # real_data_tmp = self.real_data.sample(frac=0.9, weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
+
+
+            # n_samples = len(self.fake_data) # length of the real data for comparison   !!maybe other algo
+            # # find indices in real data for conditioned rows and not conditioned separately
+            # ind_cond = real_data_tmp.index[(real_data_tmp[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data_tmp[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
+            # ind_rest = real_data_tmp.index[~((real_data_tmp[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data_tmp[condition_list[0]["col2"]] == condition_list[0]["cat2"]))].to_numpy()
+
+            # real_cond_count = len(ind_cond) # how many conditioned rows in real data
+            # self.real_cond_count = real_cond_count
+            
+            # if real_cond_count < n_samples*cond_ratio: # if there are not enough conditioned rows in real data
+            #     r_data_size = len(real_data_tmp)
+            #     cond_ratio =self.real_cond_count/r_data_size
+
+            # choices = np.random.choice([0, 1], size=n_samples, p=[cond_ratio, 1-cond_ratio]) # get choice from which array to sample based on cond_ratio
+
+            # cond_sample = np.random.choice(ind_cond, size=np.sum(choices == 0), replace=False) # sample cond rows from indices
+            # rest_sample = np.random.choice(ind_rest, size=np.sum(choices == 1), replace=False) # sample rest rows from indices
+
+            # indices = np.empty(n_samples, dtype=int) # concatinate sampled indices
+            # indices[choices == 0] = cond_sample
+            # indices[choices == 1] = rest_sample
+
+            # self.real_data_constr_cond = real_data_tmp.iloc[indices, :].reset_index(drop=True) # get conditioned dataframe
 
             self.row_case = "Constr & Cond"
         
@@ -299,28 +323,10 @@ class Data_evaluation(object):
 
         kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
         labels_clustered = kmeans_cluster.fit_predict(merged_data)
-        # centroids_merged = kmeans_cluster.cluster_centers_ 
-        # centroids_diff_merged = np.sum(np.abs(centroids_real - centroids_merged))
 
         n_R_i = np.array([np.sum(labels_merged[labels_clustered == i]) for i in range(m_clusters)])
         n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
         log_cluster_merged = np.log(np.mean(((n_R_i / n_i) - c)**2))
-
-        # log cluster , real data - gold value
-        # real_fake_data = real.copy()
-        # real_fake_data = real_fake_data.sample(frac=1).reset_index(drop=True)
-        # # labels_r_s = np.array([1] * len_r + [0] * len_s) 
-        # labels_r_s = np.random.choice([0, 1], size=len(real))
-        # n_R = np.count_nonzero(labels_r_s)
-        # n_S = labels_r_s.size - n_R
-        # c = n_R / (n_R + n_S)
-        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        # labels_clustered = kmeans_cluster.fit_predict(real_fake_data)
-        # centroids_fake_real = kmeans_cluster.cluster_centers_ 
-
-        # n_R_i = np.array([np.sum(labels_r_s[labels_clustered == i]) for i in range(m_clusters)])
-        # n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
-        # log_cluster_fake_real = np.log(np.mean(((n_R_i / n_i) - c) ** 2))
 
         return log_cluster_merged
     
@@ -328,17 +334,14 @@ class Data_evaluation(object):
         if model_name == "dt":
             model = tree.DecisionTreeClassifier(random_state=42)
         elif model_name == "mlp":
-            model = MLPClassifier(random_state=42,max_iter=100)
+            model = MLPClassifier(random_state=42,max_iter=1000)
         
         model.fit(x_train, y_train)
         pred_labels = model.predict(x_test)
 
         if len(np.unique(y_train))>2: # multi-class classification
             pred_prob = model.predict_proba(x_test)
-            # y_score = np.zeros((len(y_test), len(labels_unique)))  # if classes are missing
-            # for i, label in enumerate(pred_labels):
-            #     class_index = np.where(labels_unique == label)[0][0]
-            #     y_score[i, class_index] = 1 
+
             acc = metrics.accuracy_score(y_test,pred_labels)
             auc = metrics.roc_auc_score(y_test, pred_prob,average="weighted",multi_class="ovr") # ovr computes the AUC of each class against the rest (the number of true instances for each label)
             f1_score_ = metrics.f1_score(y_test, pred_labels,average="weighted") # == precision_recall_fscore_support(y_test, pred_labels)
@@ -358,7 +361,7 @@ class Data_evaluation(object):
         if model_name == "dt":
             model = tree.DecisionTreeRegressor(random_state=42)
         elif model_name == "mlp":
-            model = MLPRegressor(random_state=42,max_iter=100)
+            model = MLPRegressor(random_state=42,max_iter=1000)
         
         model.fit(x_train, y_train)
         pred = model.predict(x_test)
@@ -414,7 +417,7 @@ class Data_evaluation(object):
                 plt.ylabel('Feature Importance')
                 plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                # plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
                 plt.close()
 
                 return class_metrics_diff_dt, feature_importance_diff_class
@@ -432,7 +435,7 @@ class Data_evaluation(object):
                 if target_col in non_cat_cols_mlp:
                     non_cat_cols_mlp.remove(target_col)
 
-                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='value',return_df=True,use_cat_names=True)
                 cat_feature_transformed = encoder.fit_transform(real_data_indep_init.loc[:, cat_cols_mlp])
 
                 scaler = MinMaxScaler()
@@ -494,7 +497,7 @@ class Data_evaluation(object):
                 plt.ylabel('Feature Importance')
                 plt.title(f'{self.case_name}.DT Feature Importance')
                 plt.legend()
-                # plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
+                plt.savefig(f"results/{self.data_name}/model_eval/DT Feature Importance_{self.case_name}.pdf", dpi=300, bbox_inches='tight')
                 plt.close()
 
                 return regr_metrics_diff_dt, feature_importance_diff_regr
@@ -514,7 +517,7 @@ class Data_evaluation(object):
                 if target_col in non_cat_cols_mlp:
                     non_cat_cols_mlp.remove(target_col)
 
-                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='return_nan',return_df=True,use_cat_names=True)
+                encoder=ce.OneHotEncoder(cols=cat_cols_mlp,handle_unknown='value',return_df=True,use_cat_names=True)
                 cat_feature_transformed = encoder.fit_transform(real_data_indep_init.loc[:, cat_cols_mlp])
                 scaler = MinMaxScaler()
                 non_cat_feature_transformed = scaler.fit_transform(real_data_indep_init.loc[:, non_cat_cols_mlp])
@@ -567,12 +570,6 @@ class Data_evaluation(object):
         fake = self.fake_data
         # cat_balance_diff = {}
         for key, value in self.col_types.items():
-            # if value == "categorical":
-            #     bal_real =self.real_data[key].value_counts().to_numpy()
-            #     bal_real = bal_real/bal_real.sum()
-            #     bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
-            #     bal_fake = bal_fake/bal_fake.sum()
-            #     cat_balance_diff[key] = bal_real - bal_fake
             if key in self.class_balance.keys():
                 bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
                 bal_fake = bal_fake/bal_fake.sum()
@@ -588,27 +585,22 @@ class Data_evaluation(object):
             count = indicator.sum()
             fake_prob_cond.append(count/f_data_size) # count the fraction of condition occurances
         
-        cond_prob_diff = fake_prob_cond[0] - self.cond_ratio
+        # cond_prob_diff = fake_prob_cond[0] - self.cond_ratio
         
         r_data_size = len(self.real_data)
         real_prob_cond = []
         real_prob_cond.append(self.real_cond_count/r_data_size) # count the fraction of condition occurances in real data
 
-        cond_prob_diff = [self.cond_ratio, fake_prob_cond, real_prob_cond]
+        cond_prob_diff = {"cond_ratio": self.cond_ratio, "fake_prob_cond": fake_prob_cond, "real_prob_cond": real_prob_cond}
         return cond_prob_diff
 
-    def get_graphs(self):
-        pass
-    
-
     def evaluate_data(self):
-        # df_metrics_act, df_ml_utility_act = self.evaluation_metrics(self.real_data)
-        # real data depends on the case, fake data is the same
         
+        # real data depends on the case, fake data is the same
         if self.case_name == "actual":
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data)
             add_diff = None
-        elif self.case_name == "constr":
+        elif self.case_name == "constr" or self.case_name == "constr_loss" or self.case_name == "constr_cv":
             cat_balance_diff = self.check_constraints()
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr)
             add_diff = cat_balance_diff
@@ -617,5 +609,12 @@ class Data_evaluation(object):
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_cond)
             add_diff = cond_prob_diff
         elif self.case_name == "constr_cond":
-            pass
-        return lst_metrics, lst_ml_utility, add_diff
+            cat_balance_diff = self.check_constraints()
+            cond_prob_diff= self.check_conditions()
+            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr_cond)
+            add_diff = [cat_balance_diff, cond_prob_diff]
+        
+        lst_metrics_act, lst_ml_utility_act = self.evaluation_metrics(self.real_data)
+        
+        
+        return lst_metrics, lst_ml_utility, add_diff, lst_metrics_act, lst_ml_utility_act
