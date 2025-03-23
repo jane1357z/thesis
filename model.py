@@ -23,11 +23,11 @@ class Synthesizer:
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=500,
-                 epochs=300,
+                 epochs=100,
                  steps_d = 5, # number of updates D for 1 update G
                  steps_per_epoch = 1, # max(1, len(train_data) // self.batch_size) # to get the number of full batches, but at least 1
                  steps_per_epoch_c=1,
-                 epochs_c=1000):
+                 epochs_c=100):
 
         self.noise_dim = noise_dim
         self.batch_size = batch_size
@@ -43,16 +43,8 @@ class Synthesizer:
         self.steps_per_epoch_c = steps_per_epoch_c
         self.epochs_c = epochs_c
 
-    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, log_transf, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
-        # cases: actual, constr, cond, constr_cond
-        if class_balance == None and condition_list == None:
-            case_name = "actual"
-        elif class_balance != None and condition_list == None:
-            case_name = "constr"
-        elif class_balance == None and condition_list != None:
-            case_name = "cond"
-        elif class_balance != None and condition_list != None:
-            case_name = "constr_cond"
+    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, log_transf, components_numbers, mixed_modes, target_col, case_name, class_balance=None, condition_list=None, cond_ratio = None):
+        # cases: actual, constr, constr_cv, constr_loss, cond, constr_cond
         
         print("Transformation")
         # transform data        
@@ -248,7 +240,7 @@ class Synthesizer:
                 g_loss_info_lst.append(float(g_loss_info))
                 g_loss_class_lst.append(float(g_loss_class))
 
-                if case_name == "constr_cond" or case_name == "constr":
+                if case_name == "constr_cond" or case_name == "constr" or case_name == "constr_loss":
                     # penalty_constraint
                     g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance, self.constr_loss_coef)
 
@@ -282,7 +274,7 @@ class Synthesizer:
         
         ####### Evaluation
 
-        if case_name == "constr_cond" or case_name == "constr":
+        if case_name == "constr_loss" or case_name == "constr":
             self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst)
         else:
             self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst)        

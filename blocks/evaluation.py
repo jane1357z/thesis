@@ -43,7 +43,7 @@ class Model_evaluation(object):
         g_loss_info = np.mean(g_loss_info_lst.reshape(-1, self.steps_per_epoch), axis=1)
         g_loss_class = np.mean(g_loss_class_lst.reshape(-1, self.steps_per_epoch), axis=1)
         
-        if g_loss_constr_lst != None: # depending on the case (with/without constr)
+        if g_loss_constr_lst != None: # depending on the case
             g_loss_constr_lst = np.array(g_loss_constr_lst)
             g_loss_constr = np.mean(g_loss_constr_lst.reshape(-1, self.steps_per_epoch), axis=1)
         
@@ -323,28 +323,10 @@ class Data_evaluation(object):
 
         kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
         labels_clustered = kmeans_cluster.fit_predict(merged_data)
-        # centroids_merged = kmeans_cluster.cluster_centers_ 
-        # centroids_diff_merged = np.sum(np.abs(centroids_real - centroids_merged))
 
         n_R_i = np.array([np.sum(labels_merged[labels_clustered == i]) for i in range(m_clusters)])
         n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
         log_cluster_merged = np.log(np.mean(((n_R_i / n_i) - c)**2))
-
-        # log cluster , real data - gold value
-        # real_fake_data = real.copy()
-        # real_fake_data = real_fake_data.sample(frac=1).reset_index(drop=True)
-        # # labels_r_s = np.array([1] * len_r + [0] * len_s) 
-        # labels_r_s = np.random.choice([0, 1], size=len(real))
-        # n_R = np.count_nonzero(labels_r_s)
-        # n_S = labels_r_s.size - n_R
-        # c = n_R / (n_R + n_S)
-        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        # labels_clustered = kmeans_cluster.fit_predict(real_fake_data)
-        # centroids_fake_real = kmeans_cluster.cluster_centers_ 
-
-        # n_R_i = np.array([np.sum(labels_r_s[labels_clustered == i]) for i in range(m_clusters)])
-        # n_i = np.array([np.sum(labels_clustered == i) for i in range(m_clusters)])
-        # log_cluster_fake_real = np.log(np.mean(((n_R_i / n_i) - c) ** 2))
 
         return log_cluster_merged
     
@@ -359,10 +341,7 @@ class Data_evaluation(object):
 
         if len(np.unique(y_train))>2: # multi-class classification
             pred_prob = model.predict_proba(x_test)
-            # y_score = np.zeros((len(y_test), len(labels_unique)))  # if classes are missing
-            # for i, label in enumerate(pred_labels):
-            #     class_index = np.where(labels_unique == label)[0][0]
-            #     y_score[i, class_index] = 1 
+
             acc = metrics.accuracy_score(y_test,pred_labels)
             auc = metrics.roc_auc_score(y_test, pred_prob,average="weighted",multi_class="ovr") # ovr computes the AUC of each class against the rest (the number of true instances for each label)
             f1_score_ = metrics.f1_score(y_test, pred_labels,average="weighted") # == precision_recall_fscore_support(y_test, pred_labels)
@@ -591,12 +570,6 @@ class Data_evaluation(object):
         fake = self.fake_data
         # cat_balance_diff = {}
         for key, value in self.col_types.items():
-            # if value == "categorical":
-            #     bal_real =self.real_data[key].value_counts().to_numpy()
-            #     bal_real = bal_real/bal_real.sum()
-            #     bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
-            #     bal_fake = bal_fake/bal_fake.sum()
-            #     cat_balance_diff[key] = bal_real - bal_fake
             if key in self.class_balance.keys():
                 bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
                 bal_fake = bal_fake/bal_fake.sum()
@@ -612,18 +585,14 @@ class Data_evaluation(object):
             count = indicator.sum()
             fake_prob_cond.append(count/f_data_size) # count the fraction of condition occurances
         
-        cond_prob_diff = fake_prob_cond[0] - self.cond_ratio
+        # cond_prob_diff = fake_prob_cond[0] - self.cond_ratio
         
         r_data_size = len(self.real_data)
         real_prob_cond = []
         real_prob_cond.append(self.real_cond_count/r_data_size) # count the fraction of condition occurances in real data
 
-        cond_prob_diff = [self.cond_ratio, fake_prob_cond, real_prob_cond]
+        cond_prob_diff = {"cond_ratio": self.cond_ratio, "fake_prob_cond": fake_prob_cond, "real_prob_cond": real_prob_cond}
         return cond_prob_diff
-
-    def get_graphs(self):
-        pass
-    
 
     def evaluate_data(self):
         
@@ -631,7 +600,7 @@ class Data_evaluation(object):
         if self.case_name == "actual":
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data)
             add_diff = None
-        elif self.case_name == "constr":
+        elif self.case_name == "constr" or self.case_name == "constr_loss" or self.case_name == "constr_cv":
             cat_balance_diff = self.check_constraints()
             lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr)
             add_diff = cat_balance_diff

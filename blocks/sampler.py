@@ -35,12 +35,8 @@ class Sampler(object):
             idx = np.random.choice(np.arange(self.data_len), n)
             return self.data[idx]
         idx = []
-        # col and opt - 1
-        if self.case_name == "actual" or self.case_name == "constr":
-            for c, o in zip(col, opt):
-                idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
-                
-        elif self.case_name == "cond" or self.case_name == "constr_cond":
+
+        if self.case_name == "cond" or self.case_name == "constr_cond":
         # col and opt - 2
             for c, o in zip(col, opt):
                 if o[1] == None:
@@ -61,7 +57,12 @@ class Sampler(object):
                             idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
                         else:
                             idx.append(np.random.choice(self.cat_ones_row_idx[c[1]][o[1]][0]))
-
+                
+        else:
+            # col and opt - 1
+            for c, o in zip(col, opt):
+                idx.append(np.random.choice(self.cat_ones_row_idx[c][o][0])) # get random row by the condition
+                
         return self.data[idx]
     
 
