@@ -18,8 +18,8 @@ class Synthesizer:
                  noise_dim=128, # dim of z - noise vector for G 
                  generator_dim=[128], # list of integers, size(s) of hidden layers
                  discriminator_dim=[128], # list of integers, size(s) of hidden layers
-                 classifier_dim = [128], # list of integers of hidden layers
-                 constr_loss_coef = 100, # constraint loss coefficient
+                 classifier_dim = [128,128], # list of integers of hidden layers
+                 constr_loss_coef = 300, # constraint loss coefficient
                  mode_threshold = 0.005,
                  pac=10, # number of samples in one pac
                  batch_size=100,
@@ -56,17 +56,9 @@ class Synthesizer:
         self.gamma_d = gamma_d
         self.lr_d = lr_d
         self.i_exp = i_exp
-
-    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, log_transf, components_numbers, mixed_modes, target_col, class_balance=None, condition_list=None, cond_ratio = None):
-        # cases: actual, constr, cond, constr_cond
-        if class_balance == None and condition_list == None:
-            case_name = "actual"
-        elif class_balance != None and condition_list == None:
-            case_name = "constr"
-        elif class_balance == None and condition_list != None:
-            case_name = "cond"
-        elif class_balance != None and condition_list != None:
-            case_name = "constr_cond"
+        
+    def fit(self, data_name, raw_data, categorical_cols, continuous_cols, mixed_cols, general_cols, log_transf, components_numbers, mixed_modes, target_col, case_name, class_balance=None, condition_list=None, cond_ratio = None):
+        # cases: actual, constr, constr_cv, constr_loss, cond, constr_cond
         
         print("Transformation")
         # transform data        
@@ -95,8 +87,8 @@ class Synthesizer:
 
         # initialize C
         train_data = torch.from_numpy(train_data).float()
-        classifier = Classifier(data_dim,self.classifier_dim, target_col, self.transformer.transformed_col_names, self.transformer.transformed_col_dims)
-        optimizer_params_C = dict(lr=2e-4, betas=(0.5, 0.9), eps=1e-3, weight_decay=1e-5)
+        classifier = Classifier(data_dim,self.classifier_dim, target_col, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.col_types)
+        optimizer_params_C = dict(lr=2e-4, betas=(0.5, 0.999), eps=1e-3, weight_decay=1e-5)
 
         optimizerC = optim.Adam(classifier.parameters(),**optimizer_params_C)
 
@@ -112,7 +104,6 @@ class Synthesizer:
                 optimizerC.zero_grad()
                 loss_cc.backward()
                 optimizerC.step()
-
 
         # initialize G
         self.generator = Generator(self.noise_dim + self.cond_vector.n_opt, self.generator_dim, train_data.shape[1])
@@ -222,7 +213,7 @@ class Synthesizer:
                 # generator loss
                 g_loss_gen = loss_generator(fake, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, self.transformer.categorical_labels, self.cond_vector.cat_col_dims, c, m)
 
-                g_loss_orig_gen = g_loss_orig + g_loss_gen
+                # g_loss_orig_gen = g_loss_orig + g_loss_gen
                 # g_loss_orig_gen.backward(retain_graph=True)
 
                 # information loss
@@ -241,6 +232,17 @@ class Synthesizer:
                 g_loss_info = loss_mean + loss_std 
                 # g_loss_info.backward(retain_graph=True)
 
+                ##### train C additionaly
+                real_pre, real_label = classifier(real)
+
+                loss_cc = classifier.loss_classification(real_pre, real_label)
+
+                optimizerC.zero_grad()
+                loss_cc.backward()
+                optimizerC.step()
+                
+                #####
+
                 # classification loss G
                 fake_pre, fake_label = classifier(fake_act)
                 g_loss_class = classifier.loss_classification(fake_pre, fake_label)
@@ -253,8 +255,7 @@ class Synthesizer:
                 g_loss_info_lst.append(float(g_loss_info))
                 g_loss_class_lst.append(float(g_loss_class))
 
-                
-                if case_name == "constr_cond" or case_name == "constr":
+                if case_name == "constr_cond" or case_name == "constr" or case_name == "constr_loss":
                     # penalty_constraint
                     g_loss_constr = loss_constraint(fake_act, self.transformer.transformed_col_names, self.transformer.transformed_col_dims, class_balance, self.constr_loss_coef)
 
@@ -288,7 +289,7 @@ class Synthesizer:
         
         ####### Evaluation
 
-        if case_name == "constr_cond" or case_name == "constr":
+        if case_name == "constr_loss" or case_name == "constr":
             self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst, g_loss_constr_lst)
         else:
             self.evaluation_model.losses_plot(d_loss_lst, g_loss_lst, g_loss_orig_lst, g_loss_gen_lst, g_loss_info_lst, g_loss_class_lst)        
@@ -297,7 +298,7 @@ class Synthesizer:
 
 
     def sample(self, n_rows): # sample data after training is finished. User defines how many rows
-        
+        print("Sampling")
         self.generator.eval()
 
         steps = n_rows // self.batch_size + 1
