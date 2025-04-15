@@ -99,95 +99,23 @@ class Data_evaluation(object):
         self.target_col = target_col
 
         # cases: actual, constr, cond, constr_cond
-        # get real data based on constr or cond for comparison
-        if class_balance == None and condition_list == None:
+        if class_balance is None and condition_list is None:
             case_name = "actual"
-            self.row_case = "Actual"
             
-        elif class_balance != None and condition_list == None:
+        elif class_balance is not None and condition_list is None:
             case_name = "constr"
-            key_cat = list(class_balance.keys())[0]
-            prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
-            self.real_data_constr = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
-
             self.class_balance = class_balance
-            
-            self.row_case = "Constraints"
 
-        elif class_balance == None and condition_list != None:
+        elif class_balance is None and condition_list is not None:
             case_name = "cond"
             self.condition_list = condition_list
             self.cond_ratio = cond_ratio
 
-
-            n_samples = len(self.fake_data) # length of the real data for comparison   !!maybe other algo
-            # find indices in real data for conditioned rows and not conditioned separately
-            ind_cond = real_data.index[(real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
-            ind_rest = real_data.index[~((real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"]))].to_numpy()
-
-            real_cond_count = len(ind_cond) # how many conditioned rows in real data
-            self.real_cond_count = real_cond_count
-            
-            if real_cond_count < n_samples*cond_ratio: # if there are not enough conditioned rows in real data
-                r_data_size = len(self.real_data)
-                cond_ratio =self.real_cond_count/r_data_size
-
-            choices = np.random.choice([0, 1], size=n_samples, p=[cond_ratio, 1-cond_ratio]) # get choice from which array to sample based on cond_ratio
-
-            cond_sample = np.random.choice(ind_cond, size=np.sum(choices == 0), replace=False) # sample cond rows from indices
-            rest_sample = np.random.choice(ind_rest, size=np.sum(choices == 1), replace=False) # sample rest rows from indices
-
-            indices = np.empty(n_samples, dtype=int) # concatinate sampled indices
-            indices[choices == 0] = cond_sample
-            indices[choices == 1] = rest_sample
-
-            self.real_data_cond = real_data.iloc[indices, :].reset_index(drop=True) # get conditioned dataframe
-
-            self.row_case = "Conditions"
-
-        elif class_balance != None and condition_list != None:
+        elif class_balance is not None and condition_list is not None:
             case_name = "constr_cond"
             self.class_balance = class_balance
             self.condition_list = condition_list
             self.cond_ratio = cond_ratio
-
-            key_cat = list(class_balance.keys())[0]
-            prob_dict = dict(zip(list(self.real_data[key_cat].value_counts().index), class_balance[key_cat]))
-
-            self.real_data_constr_cond = self.real_data.sample(n=len(self.fake_data), weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
-
-            ind_cond = real_data.index[(real_data[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
-
-            real_cond_count = len(ind_cond) # how many conditioned rows in real data
-            self.real_cond_count = real_cond_count
-
-            # real_data_tmp = self.real_data.sample(frac=0.9, weights=self.real_data[key_cat].map(prob_dict)).reset_index(drop=True) 
-
-
-            # n_samples = len(self.fake_data) # length of the real data for comparison   !!maybe other algo
-            # # find indices in real data for conditioned rows and not conditioned separately
-            # ind_cond = real_data_tmp.index[(real_data_tmp[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data_tmp[condition_list[0]["col2"]] == condition_list[0]["cat2"])].to_numpy()
-            # ind_rest = real_data_tmp.index[~((real_data_tmp[condition_list[0]["col1"]] == condition_list[0]["cat1"]) & (real_data_tmp[condition_list[0]["col2"]] == condition_list[0]["cat2"]))].to_numpy()
-
-            # real_cond_count = len(ind_cond) # how many conditioned rows in real data
-            # self.real_cond_count = real_cond_count
-            
-            # if real_cond_count < n_samples*cond_ratio: # if there are not enough conditioned rows in real data
-            #     r_data_size = len(real_data_tmp)
-            #     cond_ratio =self.real_cond_count/r_data_size
-
-            # choices = np.random.choice([0, 1], size=n_samples, p=[cond_ratio, 1-cond_ratio]) # get choice from which array to sample based on cond_ratio
-
-            # cond_sample = np.random.choice(ind_cond, size=np.sum(choices == 0), replace=False) # sample cond rows from indices
-            # rest_sample = np.random.choice(ind_rest, size=np.sum(choices == 1), replace=False) # sample rest rows from indices
-
-            # indices = np.empty(n_samples, dtype=int) # concatinate sampled indices
-            # indices[choices == 0] = cond_sample
-            # indices[choices == 1] = rest_sample
-
-            # self.real_data_constr_cond = real_data_tmp.iloc[indices, :].reset_index(drop=True) # get conditioned dataframe
-
-            self.row_case = "Constr & Cond"
         
         self.case_name = case_name
 
@@ -301,17 +229,6 @@ class Data_evaluation(object):
             sil_scores.append(silhouette_avg)
 
         m_clusters = sil_scores.index(max(sil_scores))+2
-
-        # # real fake separately
-        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        # labels_real = kmeans_cluster.fit_predict(real)
-        # centroids_real = kmeans_cluster.cluster_centers_ 
-
-        # kmeans_cluster = KMeans(init = "random", n_clusters = m_clusters)
-        # labels_fake = kmeans_cluster.fit_predict(fake)
-        # centroids_fake = kmeans_cluster.cluster_centers_ 
-        
-        # centroids_diff_fake = np.sum(np.abs(centroids_real - centroids_fake))
         
         # log cluster, merged data
         merged_data = np.vstack((real, fake))
@@ -568,12 +485,11 @@ class Data_evaluation(object):
 
     def check_constraints(self):
         fake = self.fake_data
-        # cat_balance_diff = {}
         for key, value in self.col_types.items():
             if key in self.class_balance.keys():
                 bal_fake = fake[key].value_counts().reindex(list(self.real_data[key].value_counts().index), fill_value=0).to_numpy() # if some categories are missing
                 bal_fake = bal_fake/bal_fake.sum()
-                class_balance_diff = np.mean((bal_fake - self.class_balance[key]) ** 2) # MSE
+                class_balance_diff = {"constr": self.class_balance[key], "fake": bal_fake}
         return class_balance_diff
 
     def check_conditions(self):
@@ -585,36 +501,25 @@ class Data_evaluation(object):
             count = indicator.sum()
             fake_prob_cond.append(count/f_data_size) # count the fraction of condition occurances
         
-        # cond_prob_diff = fake_prob_cond[0] - self.cond_ratio
-        
-        r_data_size = len(self.real_data)
-        real_prob_cond = []
-        real_prob_cond.append(self.real_cond_count/r_data_size) # count the fraction of condition occurances in real data
-
-        cond_prob_diff = {"cond_ratio": self.cond_ratio, "fake_prob_cond": fake_prob_cond, "real_prob_cond": real_prob_cond}
+        cond_prob_diff = {"cond_ratio": self.cond_ratio, "fake_prob_cond": fake_prob_cond}
         return cond_prob_diff
 
     def evaluate_data(self):
         
         # real data depends on the case, fake data is the same
+        lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data)
         if self.case_name == "actual":
-            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data)
             add_diff = None
-        elif self.case_name == "constr" or self.case_name == "constr_loss" or self.case_name == "constr_cv":
+        elif self.case_name == "constr":
             cat_balance_diff = self.check_constraints()
-            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr)
             add_diff = cat_balance_diff
         elif self.case_name == "cond":
             cond_prob_diff= self.check_conditions()
-            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_cond)
             add_diff = cond_prob_diff
         elif self.case_name == "constr_cond":
             cat_balance_diff = self.check_constraints()
             cond_prob_diff= self.check_conditions()
-            lst_metrics, lst_ml_utility = self.evaluation_metrics(self.real_data_constr_cond)
             add_diff = [cat_balance_diff, cond_prob_diff]
         
-        lst_metrics_act, lst_ml_utility_act = self.evaluation_metrics(self.real_data)
         
-        
-        return lst_metrics, lst_ml_utility, add_diff, lst_metrics_act, lst_ml_utility_act
+        return lst_metrics, lst_ml_utility, add_diff

@@ -1,0 +1,34 @@
+Actual:
+Avg train epoch time: 21.64280237999985
+d auc score last epoch: 0.5825185185185184
+Experiment time: 122.23743183333336 mins
+
+Constraints:
+Avg train epoch time: 15.577185970333243
+d auc score last epoch: 0.5385000000000001
+Experiment time: 88.88876281333336 mins
+add_diff: {'constr': [0.6, 0.2, 0.1, 0.05, 0.05], 'fake': array([0.5895, 0.201 , 0.1085, 0.049 , 0.052 ])}
+
+Constr cv:
+Avg train epoch time: 18.795019006666468
+d auc score last epoch: 0.5283888888888889
+Experiment time: 110.09194238 mins
+add_diff: {'constr': [0.6, 0.2, 0.1, 0.05, 0.05], 'fake': array([0.605 , 0.2   , 0.0875, 0.066 , 0.0415])}
+
+Constr loss:
+Avg train epoch time: 24.992878328999456
+d auc score last epoch: 0.5725925925925925
+Experiment time: 138.64706928666686 mins
+add_diff: {'constr': [0.6, 0.2, 0.1, 0.05, 0.05], 'fake': array([0.852 , 0.0925, 0.0305, 0.0125, 0.0125])}
+
+Conditions:
+Avg train epoch time: 22.232141451666635
+d auc score last epoch: 0.5726666666666667
+Experiment time: 123.18689370666665 mins
+add_diff: {'cond_ratio': 0.2, 'fake_prob_cond': [0.0]}
+
+Constr & Cond:
+Avg train epoch time: 19.599478809999976
+d auc score last epoch: 0.5848703703703705
+Experiment time: 109.52175101166661 mins 
+add_diff: [{'constr': [0.6, 0.2, 0.1, 0.05, 0.05], 'fake': array([0.8275, 0.114 , 0.039 , 0.008 , 0.0115])}, {'cond_ratio': 0.2, 'fake_prob_cond': [0.0]}]

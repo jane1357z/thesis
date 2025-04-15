@@ -22,8 +22,6 @@ class DataPrep:
             self.col_types[col] = "mixed"
         for col in categorical_cols:
             self.col_types[col] = "categorical"
-            # categories_temp = raw_df[col].unique()
-            # one_hot_dict = {cat: list(np.eye(len(categories_temp))[idx]) for idx, cat in enumerate(categories_temp)} #one_hot_dict 
             self.categorical_labels[col] = np.array(raw_df[col].value_counts().index) # raw_df[col].unique() # categories for each class
             
         max_min_dec = {} # max, min values and number of decimal places
@@ -106,7 +104,7 @@ class DataPrep:
                 n_components = n_components, 
                 weight_concentration_prior=0.001,  
                 random_state=42,
-                max_iter=1000)
+                max_iter=2000)
 
                 gm.fit(current.reshape([-1, 1]))
                 mode_freq = (pd.Series(gm.predict(current.reshape([-1, 1]))).value_counts().keys()) # mode frequency descending order
@@ -200,8 +198,6 @@ class DataPrep:
                 self.models_cont_mixed["means"][key] = means
                 self.models_cont_mixed["stds"][key] = stds
 
-                # zero_std_list = [] # index of mean for modes
-
                 for i in range(len(self.mixed_modes[key])): # define the mode to mean index
                     mode = self.mixed_modes[key][i]
                     dist = []
@@ -210,7 +206,6 @@ class DataPrep:
                     index_min = np.argmin(np.array(dist))
                     self.mixed_modes[key][i] = [index_min, mode] # mode index and mode value
                     self.models_cont_mixed["modes_idx"][key] = index_min
-                    # zero_std_list.append(index_min)
 
                 current = current.reshape([-1, 1])
                 current_cont = current[filter_cont] # get only continuous values

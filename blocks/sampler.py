@@ -49,10 +49,9 @@ class Sampler(object):
 
                     intersection = np.intersect1d(cond1, cond2) # get random row by the condition, where two options in two columns intersect
 
-                    # Make a random choice if intersection is not empty
                     if intersection.size > 0:
                         idx.append(np.random.choice(intersection))
-                    else:
+                    else: # if no samples
                         if o[1] == None:
                             idx.append(np.random.choice(self.cat_ones_row_idx[c[0]][o[0]][0]))
                         else:

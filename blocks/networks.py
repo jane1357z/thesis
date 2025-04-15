@@ -54,15 +54,6 @@ class Classifier(Module):
         else: # general
             self.out_layer = Linear(dim, 1)
 
-        # if (self.str_end[1]-self.str_end[0])==1:
-        #     seq += [Linear(dim, 1)] # single unit with no activation function (a regression problem) 
-        
-        # elif (self.str_end[1]-self.str_end[0])==2:
-        #     seq += [Linear(dim, 1),Sigmoid()] # binary classification one-hot encoded => 2 columns, eather or => sigmoid
-        # else:
-        #     seq += [Linear(dim,(self.str_end[1]-self.str_end[0]))]  # multi-class classification
-        
-
 
     def forward(self, input_d):
         
@@ -79,12 +70,6 @@ class Classifier(Module):
         else: # general
             label = input_d[:, self.str_end[0]:self.str_end[1]] # extracted directly
 
-
-        # if (self.str_end[1]-self.str_end[0])==1: # one target column
-        #     label = input_d[:, self.str_end[0]:self.str_end[1]] # extracted directly
-        # else:
-        #     label = torch.argmax(input_d[:, self.str_end[0]:self.str_end[1]], axis=-1) # finds the index of the highest value in given columns, which is the predicted class
-        
         new_imp = torch.cat((input_d[:,:self.str_end[0]],input_d[:,self.str_end[1]:]),1) # removes the target columns and concatenates the parts 
         
         # pass new input through layers
@@ -110,11 +95,7 @@ class Classifier(Module):
         else: # general
             seq_out = self.seq(new_imp)
             return self.out_layer(seq_out).view(-1), label #  flatten
-
-        # if ((self.str_end[1]-self.str_end[0])==2) | ((self.str_end[1]-self.str_end[0])==1):
-        #     return self.seq(new_imp).view(-1), label #  flatten
-        # else:
-        #     return self.seq(new_imp), label
+        
         
     def loss_classification(self, predications, labels):
         target_col_type = self.col_types[self.target_col]
@@ -143,17 +124,6 @@ class Classifier(Module):
             loss_value = c_loss(predications, labels)
 
         return loss_value
-    
-        # if (self.str_end[1] - self.str_end[0])==1:
-        #     c_loss= SmoothL1Loss()
-        #     labels = labels.type_as(predications)
-        #     labels = torch.reshape(labels,predications.size())
-        # elif (self.str_end[1] - self.str_end[0])==2:
-        #     c_loss = BCELoss()
-        #     labels = labels.type_as(predications)
-        # else:
-        #     c_loss = CrossEntropyLoss() 
-        # return c_loss(predications, labels) 
 
 
 class Discriminator(Module):
@@ -167,7 +137,7 @@ class Discriminator(Module):
         for item in discriminator_dim:
             seq += [Linear(dim, item),
                     LeakyReLU(0.2),
-                    Dropout(0.4)]
+                    Dropout(0.5)]
             dim = item # updated with each layer to match the number of output features from the previous layer
 
         # output layer
@@ -240,7 +210,7 @@ class Generator(Module):
         return data
 
 
-def apply_activate(data, col_types, col_names, col_dims): # transform G`s output to pass to D as input`
+def apply_activation(data, col_types, col_names, col_dims): # transform G`s output to pass to D as input
     data_t = [] # transformed data
     
     for key, value in col_types.items():
@@ -252,13 +222,7 @@ def apply_activate(data, col_types, col_names, col_dims): # transform G`s output
             alpha_tmp = torch.tanh(data[:, st:st+1]) # alpha
             mode_tmp = F.gumbel_softmax(data[:, st+1:ed], tau=0.2) # one-hot encoded modes
             data_t.append(torch.cat([alpha_tmp, mode_tmp], dim=1))
-        # elif value=="continuous":
-        #     if ed-st == 1:
-        #         data_t.append(torch.tanh(data[:, st:ed])) # single-mode
-        #     else: # multimodal
-        #         alpha_tmp = torch.tanh(data[:, st:st+1]) # alpha
-        #         mode_tmp = F.gumbel_softmax(data[:, st+1:ed], tau=0.2) # one-hot encoded modes
-        #         data_t.append(torch.cat([alpha_tmp, mode_tmp], dim=1))              
+          
         else: # general
             data_t.append(torch.tanh(data[:, st:ed]))
     return torch.cat(data_t, dim=1) # dim=1 feature dimension, merges tensors along the feature dimension
@@ -290,8 +254,8 @@ def loss_constraint(data, col_names, col_dims, constr_dict, constr_loss_coef):
         binary_col_data = (col_data >= 0.5).astype(int)
         result = np.array([sum(col) for col in binary_col_data]) # count 1s of one-hot encoded column
         res_percentages = result/result.sum() # probs of each category in each column of one-hot encoded categorical var
-        loss += np.mean((res_percentages - perc) ** 2) # mse for fake data balance class and desired
+        loss += np.mean(np.abs(res_percentages - perc)) # mse for fake data balance class and desired
     loss = constr_loss_coef*loss
     loss = torch.tensor(loss, requires_grad=True)
-    return loss
+    return loss, res_percentages
     
