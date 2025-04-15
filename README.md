@@ -1,4 +1,4 @@
-# Mastet thesis
+# Master thesis
 
 ### Embedding class percentage constraints and feature dependency conditions into CTAB-GAN+ for tabular data generation
 
