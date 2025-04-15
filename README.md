@@ -2,7 +2,7 @@
 
 ### Embedding class percentage constraints and feature dependency conditions into CTAB-GAN+ for tabular data generation
 
-## Abstact 
+## Abstract 
 
 Data generation via conditional Generative Adversarial Networks (GANs) has gained significant attention. Unlike image or other types of data, tabular data synthesis contains unique challenges due to heterogeneous structure and data formats. The evolution of models involves enhancing the quality of synthetic samples, handling class imbalance and bias, addressing issues during training, selecting appropriate evaluation metrics, and  incorporating domain-specific knowledge through constraints and conditions.
 
